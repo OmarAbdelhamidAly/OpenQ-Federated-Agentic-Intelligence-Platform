@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: tenant-uploads-pvc
+  namespace: analyst-agent
+  labels:
+    app.kubernetes.io/name: analyst-agent
+    app.kubernetes.io/component: storage
+spec:
+  accessModes:
+    - ReadWriteMany  # Shared between API and Worker pods
+  resources:
+    requests:
+      storage: 5Gi
+  # Uncomment and set your StorageClass if needed:
+  # storageClassName: efs-sc  # e.g., AWS EFS for ReadWriteMany

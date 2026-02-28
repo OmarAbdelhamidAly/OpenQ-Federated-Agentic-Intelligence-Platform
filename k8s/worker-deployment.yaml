@@ -1,0 +1,69 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: analyst-worker
+  namespace: analyst-agent
+  labels:
+    app.kubernetes.io/name: analyst-worker
+    app.kubernetes.io/component: worker
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: analyst-worker
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: analyst-worker
+        app.kubernetes.io/component: worker
+    spec:
+      containers:
+        - name: worker
+          image: analyst-agent-worker:latest
+          imagePullPolicy: IfNotPresent
+          command:
+            - celery
+            - -A
+            - app.worker:celery_app
+            - worker
+            - --loglevel=info
+            - --concurrency=4
+            - --prefetch-multiplier=1
+          envFrom:
+            - configMapRef:
+                name: analyst-config
+            - secretRef:
+                name: analyst-secrets
+          resources:
+            requests:
+              cpu: 500m
+              memory: 1Gi
+            limits:
+              cpu: "2"
+              memory: 2Gi
+          volumeMounts:
+            - name: tenant-uploads
+              mountPath: /tmp/tenants
+          # Celery worker liveness via celery inspect ping
+          livenessProbe:
+            exec:
+              command:
+                - celery
+                - -A
+                - app.worker:celery_app
+                - inspect
+                - ping
+                - --timeout=10
+            initialDelaySeconds: 30
+            periodSeconds: 60
+            timeoutSeconds: 15
+            failureThreshold: 3
+      volumes:
+        - name: tenant-uploads
+          persistentVolumeClaim:
+            claimName: tenant-uploads-pvc

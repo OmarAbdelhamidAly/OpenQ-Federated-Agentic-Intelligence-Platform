@@ -1,0 +1,49 @@
+# Version control
+.git
+.gitignore
+
+# Python
+__pycache__
+*.pyc
+*.pyo
+*.egg-info
+dist/
+build/
+.eggs/
+
+# Virtual environments
+venv/
+.venv/
+env/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Testing
+.pytest_cache/
+htmlcov/
+.coverage
+tests/
+
+# Environment files (secrets — injected at runtime)
+.env
+.env.local
+.env.production
+
+# Docker (avoid recursion)
+Dockerfile
+Dockerfile.worker
+docker-compose.yml
+.dockerignore
+
+# Docs & misc
+*.md
+LICENSE
+.gemini/
+
+# OS
+.DS_Store
+Thumbs.db

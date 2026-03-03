@@ -34,7 +34,7 @@ async def test_sql_injection_rejection():
 @pytest.mark.asyncio
 async def test_sql_workflow_mocked():
     """Test the SQL workflow integration."""
-    from app.modules.sql.workflow import app as sql_graph
+    from app.modules.sql.workflow import sql_pipeline
     
     state = AnalysisState(
         tenant_id=uuid.uuid4(),
@@ -52,7 +52,7 @@ async def test_sql_workflow_mocked():
         with patch("app.modules.sql.tools.run_sql_query.run_sql_query") as mock_run:
             mock_run.return_value = {"data": [{"name": "User 1"}], "columns": ["name"]}
             
-            result = await sql_graph.ainvoke(state)
+            result = await sql_pipeline.ainvoke(state)
             
             assert result["status"] == "completed"
             assert "SQL" in result["metadata"]

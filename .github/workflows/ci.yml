@@ -30,6 +30,11 @@ jobs:
           docker compose build --build-arg BUILDKIT_INLINE_CACHE=1
           docker compose up -d
 
+      - name: ⏳ Wait for Services Health
+        run: |
+          echo "Waiting for all services to be healthy..."
+          timeout 60s bash -c 'until [ $(docker compose ps | grep "healthy" | wc -l) -ge 4 ]; do sleep 2; done' || (docker compose ps && docker compose logs && exit 1)
+
       - name: 🛡️ Isolation Guard (Architecture Check)
         run: |
           docker compose exec -T analyst-worker pytest tests/test_architecture.py

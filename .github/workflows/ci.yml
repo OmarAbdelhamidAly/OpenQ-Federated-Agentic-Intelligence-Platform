@@ -12,13 +12,13 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: 🚚 Checkout Code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: �️ Set up Docker Buildx
         uses: docker/setup-buildx-action@v2
 
       - name: 💾 Cache Docker layers
-        uses: actions/cache@v3
+        uses: actions/cache@v4
         with:
           path: /tmp/.buildx-cache
           key: ${{ runner.os }}-buildx-${{ github.sha }}
@@ -38,13 +38,13 @@ jobs:
         run: |
           docker compose exec -T analyst-worker pytest tests/
 
-      - name: � Generate Logs on Failure
+      - name:  Generate Logs on Failure
         if: failure()
         run: docker compose logs > docker-logs.txt
 
-      - name: �📊 Upload Logs on Failure
+      - name: 📊 Upload Logs on Failure
         if: failure()
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: docker-logs
           path: docker-logs.txt

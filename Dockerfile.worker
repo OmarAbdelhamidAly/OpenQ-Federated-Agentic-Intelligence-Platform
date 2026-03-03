@@ -56,7 +56,12 @@ COPY . .
 
 # Create directories for tenant uploads
 RUN mkdir -p /tmp/tenants && chown -R appuser:appuser /tmp/tenants
+
+# Ensure all files are owned by appuser
 RUN chown -R appuser:appuser /app
+
+# Add healthcheck tools
+RUN apt-get update && apt-get install -y --no-install-recommends curl && rm -rf /var/lib/apt/lists/*
 
 USER appuser
 
@@ -64,6 +69,6 @@ USER appuser
 # No health check — Celery has its own monitoring
 
 CMD ["celery", "-A", "app.worker:celery_app", "worker", \
-     "--loglevel=info", \
-     "--concurrency=4", \
-     "--prefetch-multiplier=1"]
+    "--loglevel=info", \
+    "--concurrency=4", \
+    "--prefetch-multiplier=1"]

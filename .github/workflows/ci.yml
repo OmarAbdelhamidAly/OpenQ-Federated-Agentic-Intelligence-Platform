@@ -33,7 +33,20 @@ jobs:
       - name: ⏳ Wait for Services Health
         run: |
           echo "Waiting for all services to be healthy..."
-          timeout 60s bash -c 'until [ $(docker compose ps | grep "healthy" | wc -l) -ge 4 ]; do sleep 2; done' || (docker compose ps && docker compose logs && exit 1)
+          # Wait up to 90 seconds for 4 healthy containers (postgres, redis, api, worker)
+          for i in {1..45}; do
+            HEALTHY_COUNT=$(docker compose ps | grep -c "healthy")
+            echo "Healthy services: $HEALTHY_COUNT / 4"
+            if [ "$HEALTHY_COUNT" -ge 4 ]; then
+              echo "✅ Services are ready!"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "❌ Timed out waiting for services. Status:"
+          docker compose ps
+          docker compose logs
+          exit 1
 
       - name: 🛡️ Isolation Guard (Architecture Check)
         run: |

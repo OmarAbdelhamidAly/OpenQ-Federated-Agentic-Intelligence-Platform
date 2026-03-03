@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 
 from celery import Celery
 
-from app.core.config import settings
+from app.infrastructure.config import settings
 
 celery_app = Celery(
     "analyst_worker",
@@ -44,11 +44,11 @@ async def _execute_pipeline(job_id: str) -> dict:
     """Internal async execution of the analysis pipeline."""
     from sqlalchemy import select
 
-    from app.core.database import async_session_factory
+    from app.infrastructure.database.postgres import async_session_factory
     from app.models.analysis_job import AnalysisJob
     from app.models.analysis_result import AnalysisResult
     from app.models.data_source import DataSource
-    from app.agents import get_pipeline
+    from app.use_cases.analysis.run_pipeline import get_pipeline
 
     async with async_session_factory() as db:
         # Load the job
@@ -121,5 +121,5 @@ async def _execute_pipeline(job_id: str) -> dict:
             # CRITICAL: Dispose of the engine to clear the connection pool.
             # This prevents loop-affinity issues when Celery runs the next task
             # on a new event loop (via asyncio.run).
-            from app.core.database import engine
+            from app.infrastructure.database.postgres import engine
             await engine.dispose()

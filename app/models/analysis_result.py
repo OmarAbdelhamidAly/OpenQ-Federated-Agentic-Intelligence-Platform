@@ -9,7 +9,7 @@ from sqlalchemy import ForeignKey, Text, JSON
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from app.core.database import Base
+from app.infrastructure.database.postgres import Base
 
 
 class AnalysisResult(Base):

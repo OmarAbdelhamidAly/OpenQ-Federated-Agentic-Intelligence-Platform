@@ -9,7 +9,7 @@ from sqlalchemy import String, Text, DateTime
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from app.core.database import Base
+from app.infrastructure.database.postgres import Base
 
 
 class Tenant(Base):

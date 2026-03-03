@@ -10,9 +10,9 @@ from fastapi import APIRouter, Depends, HTTPException, Response, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.database import get_db
-from app.core.dependencies import get_current_user, require_admin
-from app.core.security import hash_password
+from app.infrastructure.database.postgres import get_db
+from app.infrastructure.api_dependencies import get_current_user, require_admin
+from app.infrastructure.security import hash_password
 from app.models.user import User
 from app.schemas.user import InviteUserRequest, UserListResponse, UserResponse
 

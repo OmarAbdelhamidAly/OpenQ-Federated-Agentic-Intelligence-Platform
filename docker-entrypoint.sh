@@ -13,8 +13,9 @@ DB_HOST="${DB_HOST%%/*}"
 
 # Extract host and port from DATABASE_URL
 # Format: postgresql+asyncpg://user:pass@host:port/dbname
-PGHOST=$(echo "$DATABASE_URL" | sed -E 's|.*@([^:]+):.*|\1|')
-PGPORT=$(echo "$DATABASE_URL" | sed -E 's|.*:([0-9]+)/.*|\1|')
+# Robust extraction even if port is missing or URL has params
+PGHOST=$(echo "$DATABASE_URL" | sed -E 's|.*@([^:/?#]+).*|\1|')
+PGPORT=$(echo "$DATABASE_URL" | sed -E 's|.*:([0-9]+).*|\1|' | grep -E '^[0-9]+$' || echo "5432")
 
 MAX_RETRIES=30
 RETRY_COUNT=0

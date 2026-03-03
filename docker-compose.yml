@@ -1,12 +1,6 @@
 # ══════════════════════════════════════════════════════════════
 #  Autonomous Data Analyst Agent — Docker Compose Stack
 # ══════════════════════════════════════════════════════════════
-#  Services:
-#    1. postgres  — PostgreSQL 16 database
-#    2. redis     — Redis 7 (Celery broker + result backend)
-#    3. api       — FastAPI + Uvicorn (main application)
-#    4. worker    — Celery worker (LangGraph agent pipeline)
-# ══════════════════════════════════════════════════════════════
 
 services:
   # ── PostgreSQL ─────────────────────────────────────────────
@@ -44,7 +38,20 @@ services:
       timeout: 5s
       retries: 5
 
-  # ── FastAPI Application ────────────────────────────────────
+  # ── Qdrant (Vector DB) ──────────────────────────────────────
+  qdrant:
+    image: qdrant/qdrant:latest
+    container_name: analyst-qdrant
+    restart: unless-stopped
+    ports:
+      - "6333:6333"
+      - "6334:6334"
+    volumes:
+      - qdrantdata:/qdrant/storage
+    # Note: Official Qdrant image is minimal and lacks curl/wget. 
+    # We rely on 'service_started' condition below.
+
+    # ── FastAPI Application ────────────────────────────────────
   api:
     build:
       context: .
@@ -54,16 +61,18 @@ services:
     ports:
       - "8000:8000"
     environment:
+      # Use internal service names directly to avoid .env overrides from host
       DATABASE_URL: postgresql+asyncpg://postgres:postgres@postgres:5432/analyst_agent
       REDIS_URL: redis://redis:6379/0
+      QDRANT_URL: http://qdrant:6333
       SECRET_KEY: ${SECRET_KEY:-change-me-to-a-random-64-char-string}
-      ALGORITHM: HS256
-      ACCESS_TOKEN_EXPIRE_MINUTES: 30
-      REFRESH_TOKEN_EXPIRE_DAYS: 7
+      ALGORITHM: ${ALGORITHM:-HS256}
+      ACCESS_TOKEN_EXPIRE_MINUTES: ${ACCESS_TOKEN_EXPIRE_MINUTES:-30}
+      REFRESH_TOKEN_EXPIRE_DAYS: ${REFRESH_TOKEN_EXPIRE_DAYS:-7}
       GROCK_API_KEY: ${GROCK_API_KEY:-}
       AES_KEY: ${AES_KEY:-Y2hhbmdlLW1lLXRvLWEtcmFuZG9tLTMyLWJ5dGVz}
-      CORS_ORIGINS: '["http://localhost:3000","http://localhost:8000"]'
-      LOG_LEVEL: INFO
+      CORS_ORIGINS: ${CORS_ORIGINS:-'["http://localhost:3000","http://localhost:8000"]'}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
     volumes:
       - tenant_uploads:/tmp/tenants
     depends_on:
@@ -71,6 +80,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      qdrant:
+        condition: service_started
     healthcheck:
       test: [ "CMD", "curl", "-f", "http://localhost:8000/health" ]
       interval: 30s
@@ -86,12 +97,18 @@ services:
     container_name: analyst-worker
     restart: unless-stopped
     environment:
+      # Use internal service names directly to avoid .env overrides from host
       DATABASE_URL: postgresql+asyncpg://postgres:postgres@postgres:5432/analyst_agent
       REDIS_URL: redis://redis:6379/0
+      QDRANT_URL: http://qdrant:6333
       SECRET_KEY: ${SECRET_KEY:-change-me-to-a-random-64-char-string}
+      ALGORITHM: ${ALGORITHM:-HS256}
+      ACCESS_TOKEN_EXPIRE_MINUTES: ${ACCESS_TOKEN_EXPIRE_MINUTES:-30}
+      REFRESH_TOKEN_EXPIRE_DAYS: ${REFRESH_TOKEN_EXPIRE_DAYS:-7}
       GROCK_API_KEY: ${GROCK_API_KEY:-}
       AES_KEY: ${AES_KEY:-Y2hhbmdlLW1lLXRvLWEtcmFuZG9tLTMyLWJ5dGVz}
-      LOG_LEVEL: INFO
+      CORS_ORIGINS: ${CORS_ORIGINS:-'["http://localhost:3000","http://localhost:8000"]'}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
     volumes:
       - tenant_uploads:/tmp/tenants
     depends_on:
@@ -99,12 +116,16 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      qdrant:
+        condition: service_started
 
 # ── Named Volumes ──────────────────────────────────────────────
 volumes:
   pgdata:
     driver: local
   redisdata:
+    driver: local
+  qdrantdata:
     driver: local
   tenant_uploads:
     driver: local

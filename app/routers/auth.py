@@ -12,8 +12,8 @@ from jose import JWTError
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.database import get_db
-from app.core.security import (
+from app.infrastructure.database.postgres import get_db
+from app.infrastructure.security import (
     create_access_token,
     create_refresh_token,
     decode_token,

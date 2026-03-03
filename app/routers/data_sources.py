@@ -12,8 +12,8 @@ from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, Re
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.database import get_db
-from app.core.dependencies import get_current_user, require_admin
+from app.infrastructure.database.postgres import get_db
+from app.infrastructure.api_dependencies import get_current_user, require_admin
 from app.models.data_source import DataSource
 from app.models.user import User
 from app.schemas.data_source import (
@@ -21,9 +21,9 @@ from app.schemas.data_source import (
     DataSourceResponse,
     SQLConnectionRequest,
 )
-from app.services.encryption import encrypt_json, decrypt_json
-from app.services.storage import save_upload_file, get_tenant_dir
-from app.services.auto_analysis_service import run_auto_analysis
+from app.infrastructure.adapters.encryption import encrypt_json, decrypt_json
+from app.infrastructure.adapters.storage import save_upload_file, get_tenant_dir
+from app.use_cases.auto_analysis.service import run_auto_analysis
 
 logger = structlog.get_logger(__name__)
 router = APIRouter(prefix="/api/v1/data-sources", tags=["data-sources"])

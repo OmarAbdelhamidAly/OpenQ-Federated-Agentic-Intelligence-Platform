@@ -11,8 +11,8 @@ from fastapi import FastAPI
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
-from app.core.config import settings
-from app.core.middleware import setup_middleware
+from app.infrastructure.config import settings
+from app.infrastructure.middleware import setup_middleware
 from app.routers import auth, users, data_sources, analysis, reports
 
 logger = structlog.get_logger(__name__)

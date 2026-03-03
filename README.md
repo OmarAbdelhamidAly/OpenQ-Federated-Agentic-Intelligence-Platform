@@ -59,75 +59,55 @@ The easiest way to run the entire stack (Postgres, Redis, FastAPI backend, and C
 
 ---
 
-## 📂 Project Structure
+## 📂 Project Structure (Clean Architecture)
 
-```
+```text
 finalproject/
 ├── app/
-│   ├── main.py                 # FastAPI Application entry point
-│   ├── worker.py               # Celery Worker entry point
-│   ├── core/                   # Config, Security, DB initialization
-│   ├── models/                 # SQLAlchemy ORM Tables
-│   ├── schemas/                # Pydantic validation models
-│   ├── routers/                # API Endpoints (Auth, Users, Data Sources, Analysis)
-│   ├── services/               # Encryption, Storage, and Auto-Analysis logic
-│   ├── agents/                 # LangGraph AI Workflows Context
-│   │   ├── csv/                # Pipeline logic for flat file analysis
-│   │   └── sql/                # Pipeline logic for database querying
-│   ├── tools/                  # Python functions executed by the LLM (Pandas, DB Connect)
-│   └── static/                 # Frontend SPA (Vanilla JS, CSS, HTML)
+│   ├── domain/                 # INNER CIRCLE: Entities & State (AnalysisState)
+│   ├── infrastructure/         # OUTER CIRCLE: DB Adapters, Security, Storage, Constants
+│   ├── modules/                # FEATURE MODULES
+│   │   ├── csv/                # Squad 1: Spreadsheet Analysis (Isolated)
+│   │   ├── sql/                # Squad 2: Relational DB Analysis (Isolated)
+│   │   └── shared/             # Shared bridges (Intake, Output, Charts)
+│   ├── use_cases/              # APPLICATION LOGIC: Analysts, Auto-Analysis, Exports
+│   ├── routers/                # API Endpoints
+│   ├── schemas/                # Pydantic models
+│   └── static/                 # Frontend SPA (Vanilla JS/CSS/HTML)
 ├── alembic/                    # Database migrations
-├── docker-compose.yml          # Container configuration
-└── Dockerfile                  # API & Worker Docker build instructions
+├── docker-compose.yml          # Container configuration (FastAPI, Postgres, Redis, Qdrant)
+└── DOCUMENTATION.md            # High-level technical overview
 ```
 
 ---
 
-## 📚 Further Reading
+## 👥 Team Workflow & Onboarding
 
-For a deep dive into the system architecture, LangGraph AI workflows, and data pipeline mechanics, please refer to the `[DOCUMENTATION.md](DOCUMENTATION.md)`.
+To prevent cross-team interference, the project uses **Exhaustive Module Isolation**. Each team is responsible for their own "feature ecosystem."
+
+### 🟢 1. The CSV Squad (Analysis & Cleaning)
+**Focus:** Enhancing Pandas-based logic, data repair, and anomaly detection for flat files.
+- **Home Directory:** `app/modules/csv/`
+- **Technical Bible:** [CSV Developer Guide](app/modules/csv/DEVELOPER_GUIDE.md) — *Read this before writing any code.*
+- **Responsibilities:** Improving the `compute_trend` math, handling messy CSV formats, and implementing the **DuckDB** roadmap.
+
+### 🔵 2. The SQL Squad (Engineering & Security)
+**Focus:** High-performance querying, safe schema discovery, and AI security guardrails.
+- **Home Directory:** `app/modules/sql/`
+- **Technical Bible:** [SQL Developer Guide](app/modules/sql/DEVELOPER_GUIDE.md) — *Read this before writing any code.*
+- **Responsibilities:** Schema RAG development, SQL Query Optimization, and ensuring 100% protection against injection.
 
 ---
 
-## 👥 Team Workflow & Contribution Guide
+## 🛠️ Summary of Guides
+- **[ADMIN_FLOW.md](ADMIN_FLOW.md)**: How to use the platform as an Admin.
+- **[DOCUMENTATION.md](DOCUMENTATION.md)**: High-level architectural deep-dive.
+- **[TEAM_HANDOVER_STRATEGY.md](TEAM_HANDOVER_STRATEGY.md)**: Strategic plan for team empowerment.
 
-This section is specifically for the development team. The engineering team has been split into two core squads to optimize performance without stepping on each other's toes:
+---
 
-### 1. The CSV Squad 📄
-**Goal:** Enhance the Pandas-based AI outputs, visualization mapping, and error handling for flat files. The CSV pipeline is prone to data quality issues, so your primary focus is improving the `data_cleaning` and `analysis` agents.
-
-**Your Working Directory:** `app/agents/csv/` and `app/tools/csv/`
-
-**Your Specific Tasks & Responsibilities:**
-1. **Improve Pandas Code Generation:** Update `analysis_agent.py` to handle complex multi-step user questions (e.g., merging generated dataframes, pivoting data).
-2. **Add More CSV Tools:** Currently, we have `compute_trend` and `run_pandas_query`. Your task is to build more specific tools like `compute_anomaly`, `forecast_timeseries`, and `segment_customers` inside `app/tools/csv/`.
-3. **Data Cleaning Enhancements:** Improve `data_cleaning_agent.py` so it can automatically detect and drop extreme outliers or normalize weird date string formats before analysis begins.
-
-**Rules of Engagement:** 
-- **Branching:** You MUST work exclusively on a branch prefixed with `csv/` (e.g., `csv/add-anomaly-tool`).
-- You may only modify files within your directory.
-- You are responsible for ensuring `graph.py` inside the `csv/` folder successfully transforms raw user strings into Pandas code.
-- DO NOT merge your own code to `main`. Open a Pull Request for the Team Lead to review and merge manually.
-
-### 2. The SQL Squad 🗄️
-**Goal:** Optimize complex database querying, SQLAlchemy discovery speed, and the accuracy of the ANSI SQL generation while prioritizing absolute security against SQL injections.
-
-**Your Working Directory:** `app/agents/sql/` and `app/tools/sql/`
-
-**Your Specific Tasks & Responsibilities:**
-1. **Advance SQL Generation:** Update `analysis_agent.py` to write advanced SQL queries utilizing `CTEs`, `Window Functions`, and `JOINs` across 5+ tables without hallucinating phantom columns.
-2. **Implement Smart Schema Caching:** Update the schema discovery logic so that if a database has 500 tables, the LLM only receives the schema for the 5 tables relevant to the user's specific question (to save LLM token costs).
-3. **Strict Query Validations:** Enhance the SQL execution tool to rigorously block `DROP`, `DELETE`, or `UPDATE` commands. Ensure errors from the DB are caught and fed back to the LLM for self-correction.
-
-**Rules of Engagement:** 
-- **Branching:** You MUST work exclusively on a branch prefixed with `sql/` (e.g., `sql/schema-caching`).
-- You may only modify files within your directory.
-- You are responsible for ensuring the `analysis_agent.py` generates 100% read-only queries with strict enforcement.
-- DO NOT merge your own code to `main`. Open a Pull Request for the Team Lead to review and merge manually.
-
-### 🛡️ Deployment & Merge Strategy
-To prevent the CSV squad from breaking the SQL squad's code (and vice versa):
-1. Both teams must work on **isolated branches**.
-2. When a feature is complete, open a **Pull Request (PR)** targeting the `main` branch.
-3. The GitHub Actions pipeline will only run a basic **syntax linter (flake8)** to ensure there are no missing imports or major Python typos.
-4. **The Team Lead is the only person authorized to press "Merge".** They will pull the branch locally, test the AI pipeline manually, and then merge the code into `main` if it passes.
+## 🛡️ Deployment & Merge Strategy
+1. **Isolated Branches:** Teams work on `csv/*` or `sql/*` branches.
+2. **Exhaustive Documentation:** Every new feature MUST be documented in the module's `DEVELOPER_GUIDE.md`.
+3. **Lazy Loading:** The worker only loads the module it needs—ensure your code doesn't create cross-module dependencies.
+4. **Lead Review:** Only the Project Lead can merge PRs into `main` after verifying the AI pipeline.

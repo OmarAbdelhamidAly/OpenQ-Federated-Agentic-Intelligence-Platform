@@ -15,8 +15,9 @@ from httpx import ASGITransport, AsyncClient
 from sqlalchemy import StaticPool
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
-from app.core.database import Base, get_db
-from app.core.security import create_access_token, hash_password
+from app.infrastructure.database.postgres import Base
+from app.infrastructure.api_dependencies import get_db
+from app.infrastructure.security import create_access_token, hash_password
 from app.main import app
 from app.models.tenant import Tenant
 from app.models.user import User

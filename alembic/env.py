@@ -9,7 +9,7 @@ from alembic import context
 from sqlalchemy import pool
 from sqlalchemy.ext.asyncio import create_async_engine
 
-from app.core.config import settings
+from app.infrastructure.config import settings
 from app.models import Base  # noqa: F401 — registers all models
 
 config = context.config

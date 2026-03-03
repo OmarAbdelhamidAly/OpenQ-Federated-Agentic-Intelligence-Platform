@@ -10,7 +10,7 @@ from sqlalchemy import ForeignKey, String, Text, DateTime, CheckConstraint
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from app.core.database import Base
+from app.infrastructure.database.postgres import Base
 
 
 class User(Base):

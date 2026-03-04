@@ -4,11 +4,10 @@
 To ensure the system works, your module **must** adhere to this contract:
 
 - **Input**: You receive the `AnalysisState` containing `question`, `file_path`, and `schema_summary`.
-- **Output**: You must populate the following fields before finishing:
-  - `chart_json`: Plotly figure dictionary.
-  - `insight_report`: Markdown string of findings.
-  - `executive_summary`: 1-2 sentence summary.
-  - `error`: Populate if an error occurs.
+- **Output**: You must populate the following fields: `chart_json`, `insight_report`, `executive_summary`.
+
+> [!IMPORTANT]
+> **Data Integrity Rule**: The agent must NEVER modify the original CSV file. Any "cleaning" or "transforming" must happen in-memory on a copy. The original source is sacred.
 
 ---
 
@@ -87,6 +86,40 @@ The low-level workers that manipulate the CSV files.
 -   **`intake_agent.py`**: The gatekeeper.
 -   **`output_assembler.py`**: Formats the final results.
 -   **`load_data_source.py`**: Resolves the database ID to a physical `.csv` file path.
+
+---
+
+## 🔍 Detailed Functional Breakdown (Nodes & Agents)
+
+The CSV module uses a **LangGraph** workflow. Here is what each part does:
+
+1.  **`discovery_node` (`agents/data_discovery_agent.py`)**: 
+    - *What it does*: Uses the `profile_dataframe` tool to scan the CSV. It identifies column types, missing values, and the general "vibe" of the data.
+    - *Team Hack*: It creates a JSON summary that helps all following agents "see" the data without reading the whole file.
+
+2.  **`cleaning_node` (`agents/data_cleaning_agent.py`)**:
+    - *What it does*: Takes the discovery results and applies the `clean_dataframe` tool. It fixes nulls (using median for numbers, mode for text) and removes duplicates.
+    - *Team Hack*: It keeps a `cleaning_log` to tell the user what was repaired.
+
+3.  **`analysis_node` (`agents/analysis_agent.py`)**:
+    - *What it does*: The "Brain". It writes Python (Pandas) code to answer the user's question. It uses the `run_pandas_query` tool to execute the code in a sandbox.
+    - *Team Hack*: It handles "Intent Detection" (Trend vs Correlation) to pick the right sub-logic.
+
+4.  **`visualization_node` (`agents/visualization_agent.py`)**:
+    - *What it does*: Transforms the raw analysis numbers into a professional Plotly chart dictionary.
+    - *Team Hack*: It picks the best chart type (Bar vs Line vs Pie) based on the data shape.
+
+---
+
+## 🧠 Team 1 Innovation: Smart Enhancements & Better Tools
+
+Instead of just maintaining, here are 5 "Next-Gen" ideas for Team 1:
+
+1.  **🚀 DuckDB Integration**: Move from Pandas to DuckDB. It's 10x faster and can query files too large for RAM.
+2.  **🎭 Automated PII Masking**: Build a tool that detects Emails or Phone numbers in the CSV and masks them before the AI even sees the values.
+3.  **📈 Predictive Forecasting Node**: Add a node that uses `Prophet` or `ARIMA` to predict the next 3 months of data if the intent is "Trend".
+4.  **📉 Advanced Outlier Treatment**: Instead of just flagging outliers, create a tool that allows the *User* to choose between "Drop", "Clamp", or "Interpolate".
+5.  **📑 HTML Profiling Report**: Use `ydata-profiling` to generate a full visual HTML report and save it in the `AnalysisResult` metadata.
 
 ---
 

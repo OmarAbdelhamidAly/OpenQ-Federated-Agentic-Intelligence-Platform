@@ -8,15 +8,40 @@ This document is an exhaustive breakdown of **every file** and **every function*
 To ensure the system works, your module **must** adhere to this contract:
 
 - **Input**: You receive the `AnalysisState` containing `question`, `config_encrypted` (DB credentials), and `schema_summary`.
-- **Output**: You must populate the following fields before finishing:
-  - `chart_json`: Plotly figure dictionary.
-  - `insight_report`: Markdown string of findings.
-  - `executive_summary`: 1-2 sentence summary.
-  - `error`: Populate if an error occurs.
+- **Output**: You must populate the following fields: `chart_json`, `insight_report`, `executive_summary`.
+
+> [!IMPORTANT]
+> **Data Integrity Rule**: Operations must be 100% READ-ONLY. The system is protected by a Regex Shield that blocks `UPDATE`, `DELETE`, `INSERT`, or `DROP`. Teams must maintain this 0-modification policy.
 
 ---
 
-## 📂 1. Directory Structure Overlook
+## 🔍 Detailed Functional Breakdown (Nodes & Agents)
+
+The SQL module uses a **LangGraph** workflow focused on security and precision:
+
+1.  **`discovery_node` (`agents/data_discovery_agent.py`)**:
+    - *What it does*: Uses the `sql_schema_discovery` tool. It introspects the DB (using SQLAlchemy Inspector) to find tables and column types.
+    - *Team Hack*: It samples 3 rows per column to give the AI context on what the actual data looks like (e.g., is "Status" 0/1 or "Active/Inactive"?).
+
+2.  **`analysis_node` (`agents/analysis_agent.py`)**:
+    - *What it does*: Generates human-readable SQL (SELECT statements). It uses the `run_sql_query` tool.
+    - *Team Hack*: This tool contains a **Security Regex** that blocks any query containing `DROP`, `DELETE`, or `UPDATE`.
+
+3.  **`visualization_node` (`agents/visualization_agent.py`)**:
+    - *What it does*: Maps the SQL result set (Rows/Columns) to a Plotly chart.
+    - *Team Hack*: It ensures that "Time Series" columns are correctly formatted for the frontend.
+
+---
+
+## 🧠 Team 2 Innovation: Smart Enhancements & Better Tools
+
+Instead of just maintaining, here are 5 "Next-Gen" ideas for Team 2:
+
+1.  **🌐 Schema RAG (Vector Search)**: If a database has 5,000 tables, the AI will crash. Build a tool that uses Qdrant to retrieve only the 10 most relevant tables for the user's question.
+2.  **⚡ EXPLAIN ANALYZE Tool**: Build a tool that runs `EXPLAIN` on the generated SQL and warns the user if the query will be slow (e.g., "Warning: Missing Index on user_id").
+3.  **🛡️ Row-Level Security (RLS)**: Modify the `run_sql_query` tool to automatically inject a `WHERE tenant_id = :tid` clause into every query to ensure 100% data isolation.
+4.  **📚 Semantic Schema Mapper**: Store natural language nicknames for tables/columns in a metadata DB so users can ask for "Revenue" even if the column is named `rev_tx_01`.
+5.  **🔄 Cross-Dialect Translator**: Use the LLM to verify that the generated SQL works on the target dialect (Postgres vs MySQL) by checking for dialect-specific functions.
 ```text
 app/modules/sql/
 ├── agents/             # SQL logic generation (LLM based)

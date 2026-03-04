@@ -99,10 +99,14 @@ To prevent cross-team interference, the project uses **Exhaustive Module Isolati
 
 ---
 
-## 🛠️ Summary of Guides
-- **[ADMIN_FLOW.md](ADMIN_FLOW.md)**: How to use the platform as an Admin.
-- **[DOCUMENTATION.md](DOCUMENTATION.md)**: High-level architectural deep-dive.
-- **[TEAM_HANDOVER_STRATEGY.md](TEAM_HANDOVER_STRATEGY.md)**: Strategic plan for team empowerment.
+## 📖 Master Documentation (The "Core 6")
+
+1. **[README.md](README.md)**: Project overview and quick start.
+2. **[ARCHITECTURE.md](ARCHITECTURE.md)**: Deep-dive into layers, RAG, and security.
+3. **[ADMIN_GUIDE.md](ADMIN_GUIDE.md)**: Managing the platform and the handover.
+4. **[DEPLOYMENT.md](DEPLOYMENT.md)**: Cost analysis and AWS/Render scaling.
+5. **[CSV_TEAM.md](CSV_TEAM.md)**: Technical guide and contract for Team 1.
+6. **[SQL_TEAM.md](SQL_TEAM.md)**: Technical guide and contract for Team 2.
 
 ---
 

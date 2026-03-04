@@ -1,6 +1,14 @@
-# 🟢 CSV Team: The Ultimate Technical Manual (Exhaustive)
+# 📊 CSV Team Master Guide
 
-This document is an exhaustive breakdown of **every file** and **every function** in the CSV module. No logic is left unexplained.
+## 🤝 The Contract (I/O)
+To ensure the system works, your module **must** adhere to this contract:
+
+- **Input**: You receive the `AnalysisState` containing `question`, `file_path`, and `schema_summary`.
+- **Output**: You must populate the following fields before finishing:
+  - `chart_json`: Plotly figure dictionary.
+  - `insight_report`: Markdown string of findings.
+  - `executive_summary`: 1-2 sentence summary.
+  - `error`: Populate if an error occurs.
 
 ---
 

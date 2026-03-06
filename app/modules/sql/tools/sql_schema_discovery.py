@@ -42,6 +42,29 @@ def sql_schema_discovery(
     Returns a dict with the same shape as profile_dataframe so downstream
     agents can treat CSV and SQL schemas identically.
     """
+    import hashlib
+    import json
+    import os
+    from pathlib import Path
+
+    # 1. Check Cache
+    cache_dir = Path(".cache/schemas")
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    
+    # Hash connection string and schema to uniquely identify this DB
+    db_hash = hashlib.md5(f"{connection_string}|{schema_name}".encode()).hexdigest()
+    cache_file = cache_dir / f"{db_hash}.json"
+    
+    # If cache exists and is fresh-ish (could add TTL logic here)
+    if cache_file.exists():
+        try:
+            with open(cache_file, "r") as f:
+                cached_data = json.load(f)
+                cached_data["cached"] = True
+                return cached_data
+        except Exception:
+            pass # Fallback to live discovery
+
     engine = create_engine(connection_string)
     try:
         inspector = inspect(engine)
@@ -57,12 +80,24 @@ def sql_schema_discovery(
         tables = inspector.get_table_names(schema=effective_schema)
 
         schema_tables: List[Dict[str, Any]] = []
+        foreign_keys: List[Dict[str, Any]] = []
         total_columns = 0
 
         for table_name in tables:
             columns = inspector.get_columns(table_name, schema=effective_schema)
             pk_constraint = inspector.get_pk_constraint(table_name, schema=effective_schema)
             pk_cols = set(pk_constraint.get("constrained_columns", []))
+            
+            # Fetch Foreign Keys for ERD
+            fks = inspector.get_foreign_keys(table_name, schema=effective_schema)
+            for fk in fks:
+                for constrained, referred in zip(fk["constrained_columns"], fk["referred_columns"]):
+                    foreign_keys.append({
+                        "from_table": table_name,
+                        "from_col": constrained,
+                        "to_table": fk["referred_table"],
+                        "to_col": referred
+                    })
 
             col_infos: List[Dict[str, Any]] = []
             for col in columns:
@@ -120,19 +155,28 @@ def sql_schema_discovery(
                 }
             )
 
-        return {
+        output = {
             "dialect": dialect,
             "schema": effective_schema,
             "table_count": len(tables),
             "total_columns": total_columns,
             "tables": schema_tables,
-            # Flat list of column names across all tables — used by intake agent
+            "foreign_keys": foreign_keys,
             "all_column_names": [
                 f"{t['table']}.{c['name']}"
                 for t in schema_tables
                 for c in t["columns"]
             ],
         }
+
+        # 2. Save to Cache
+        try:
+            with open(cache_file, "w") as f:
+                json.dump(output, f)
+        except Exception:
+            pass
+
+        return output
 
     except Exception as exc:
         raise ToolException(f"Schema discovery failed: {exc}") from exc

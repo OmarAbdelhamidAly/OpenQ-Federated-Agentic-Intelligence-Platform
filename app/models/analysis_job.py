@@ -6,7 +6,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import Optional
 
-from sqlalchemy import ForeignKey, Integer, String, Text, DateTime, CheckConstraint
+from sqlalchemy import ForeignKey, Integer, String, Text, DateTime, CheckConstraint, JSON
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -17,7 +17,7 @@ class AnalysisJob(Base):
     __tablename__ = "analysis_jobs"
     __table_args__ = (
         CheckConstraint(
-            "status IN ('pending', 'running', 'done', 'error')",
+            "status IN ('pending', 'running', 'done', 'error', 'awaiting_approval')",
             name="ck_analysis_jobs_status",
         ),
     )
@@ -51,7 +51,11 @@ class AnalysisJob(Base):
     kb_id: Mapped[Optional[uuid.UUID]] = mapped_column(
         UUID(as_uuid=True), ForeignKey("knowledge_bases.id"), nullable=True
     )
+    generated_sql: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     error_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    thinking_steps: Mapped[Optional[list[dict[str, Any]]]] = mapped_column(
+        JSON, nullable=True
+    )
 
     # Relationships
     tenant = relationship("Tenant", back_populates="analysis_jobs")

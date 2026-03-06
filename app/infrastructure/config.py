@@ -38,8 +38,17 @@ class Settings(BaseSettings):
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
     REFRESH_TOKEN_EXPIRE_DAYS: int = 7
 
-    # ── Groq API ───────────────────────────────────────────────
-    GROCK_API_KEY: str = ""
+    # ── LLM APIs ──────────────────────────────────────────────
+    OPENROUTER_API_KEY: str = ""
+    GROQ_API_KEY: str = ""
+    GEMINI_API_KEY: str = ""
+    LLM_MODEL: str = "groq/llama-3.1-8b-instant"  # Default fallback, override via .env
+
+
+
+
+
+
 
     # ── AES-256 Encryption ────────────────────────────────────
     AES_KEY: str = _DEFAULT_AES_KEY

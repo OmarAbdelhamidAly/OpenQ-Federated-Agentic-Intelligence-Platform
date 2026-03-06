@@ -10,7 +10,7 @@ from __future__ import annotations
 import json
 from typing import Any, Dict
 
-from langchain_groq import ChatGroq
+from app.infrastructure.llm import get_llm
 
 from app.domain.analysis.entities import AnalysisState
 from app.infrastructure.config import settings
@@ -44,16 +44,13 @@ async def insight_agent(state: AnalysisState) -> Dict[str, Any]:
     """Generate written analysis and executive summary from SQL results."""
     analysis = state.get("analysis_results")
     if not analysis:
+        error_msg = state.get("error") or "No analysis data available."
         return {
-            "insight_report": "No analysis data available.",
+            "insight_report": f"Analysis could not be completed. Details: {error_msg}",
             "executive_summary": "Analysis could not be completed.",
         }
 
-    llm = ChatGroq(
-        model_name="llama-3.3-70b-versatile",
-        groq_api_key=settings.GROCK_API_KEY,
-        temperature=0.3,
-    )
+    llm = get_llm(temperature=0.3)
 
     prompt = INSIGHT_PROMPT.format(
         question=state.get("question", ""),

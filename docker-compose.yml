@@ -71,10 +71,14 @@ services:
       ALGORITHM: ${ALGORITHM:-HS256}
       ACCESS_TOKEN_EXPIRE_MINUTES: ${ACCESS_TOKEN_EXPIRE_MINUTES:-30}
       REFRESH_TOKEN_EXPIRE_DAYS: ${REFRESH_TOKEN_EXPIRE_DAYS:-7}
-      GROCK_API_KEY: ${GROCK_API_KEY:-}
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+      GROQ_API_KEY: ${GROQ_API_KEY}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
       AES_KEY: ${AES_KEY:-Y2hhbmdlLW1lLXRvLWEtcmFuZG9tLTMyLWJ5dGVz}
       CORS_ORIGINS: ${CORS_ORIGINS:-'["http://localhost:3000","http://localhost:8000"]'}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      LLM_MODEL: ${LLM_MODEL}
+
     volumes:
       - tenant_uploads:/tmp/tenants
     depends_on:
@@ -109,10 +113,14 @@ services:
       ALGORITHM: ${ALGORITHM:-HS256}
       ACCESS_TOKEN_EXPIRE_MINUTES: ${ACCESS_TOKEN_EXPIRE_MINUTES:-30}
       REFRESH_TOKEN_EXPIRE_DAYS: ${REFRESH_TOKEN_EXPIRE_DAYS:-7}
-      GROCK_API_KEY: ${GROCK_API_KEY:-}
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+      GROQ_API_KEY: ${GROQ_API_KEY}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
       AES_KEY: ${AES_KEY:-Y2hhbmdlLW1lLXRvLWEtcmFuZG9tLTMyLWJ5dGVz}
       CORS_ORIGINS: ${CORS_ORIGINS:-'["http://localhost:3000","http://localhost:8000"]'}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      LLM_MODEL: ${LLM_MODEL}
+
     volumes:
       - tenant_uploads:/tmp/tenants
     depends_on:

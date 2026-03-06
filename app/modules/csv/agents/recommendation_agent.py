@@ -10,7 +10,7 @@ from __future__ import annotations
 import json
 from typing import Any, Dict
 
-from langchain_groq import ChatGroq
+from app.infrastructure.llm import get_llm
 
 from app.domain.analysis.entities import AnalysisState
 from app.infrastructure.config import settings
@@ -51,11 +51,7 @@ Executive Summary: {summary}"""
 
 async def recommendation_agent(state: AnalysisState) -> Dict[str, Any]:
     """Generate recommendations and follow-up questions from CSV analysis."""
-    llm = ChatGroq(
-        model_name="llama-3.3-70b-versatile",
-        groq_api_key=settings.GROCK_API_KEY,
-        temperature=0.3,
-    )
+    llm = get_llm(temperature=0.3)
 
     prompt = REC_PROMPT.format(
         question=state.get("question", ""),

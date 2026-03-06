@@ -29,7 +29,9 @@ class AnalysisJobResponse(BaseModel):
     completed_at: Optional[datetime] = None
     retry_count: int = 0
     kb_id: Optional[uuid.UUID] = None
+    generated_sql: Optional[str] = None
     error_message: Optional[str] = None
+    thinking_steps: Optional[List[Dict[str, Any]]] = None
 
     model_config = {"from_attributes": True}
 
@@ -57,3 +59,23 @@ class AnalysisResultResponse(BaseModel):
 class AnalysisHistoryResponse(BaseModel):
     """GET /analysis/history — list of jobs with optional results."""
     jobs: List[AnalysisJobResponse]
+
+
+class ProblemDiagnosisRequest(BaseModel):
+    """POST /analysis/diagnose — describe a problem and get suggested scenarios."""
+    source_id: uuid.UUID
+    problem_description: str = Field(..., min_length=10, max_length=5000)
+
+
+class DiagnosticScenario(BaseModel):
+    """A suggested analytical scenario to diagnose a problem."""
+    text: str
+    reasoning: str
+    impact: str
+    priority: int = Field(..., ge=1, le=5)
+
+
+class ProblemDiagnosisResponse(BaseModel):
+    """Suggested scenarios resulting from problem diagnosis."""
+    problem_summary: str
+    suggestions: List[DiagnosticScenario]

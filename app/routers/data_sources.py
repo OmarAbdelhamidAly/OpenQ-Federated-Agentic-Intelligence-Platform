@@ -50,12 +50,9 @@ def _profile_dataframe(df: pd.DataFrame) -> dict:
 
 
 def _profile_sqlite(file_path: str) -> dict:
-    """Build a schema profile from an uploaded SQLite file.
-
-    Uses SQLAlchemy Inspector — no raw SQL injection possible.
-    Returns a dict that pipeline agents can read as schema_summary.
-    """
+    """Build a schema profile from an uploaded SQLite file."""
     from sqlalchemy import create_engine, inspect, text
+    from app.modules.sql.utils.schema_utils import infer_foreign_keys, generate_mermaid_erd
 
     conn_str = f"sqlite:///{file_path}"
     engine = create_engine(conn_str)
@@ -63,16 +60,32 @@ def _profile_sqlite(file_path: str) -> dict:
         inspector = inspect(engine)
         tables = inspector.get_table_names()
         result_tables = []
+        all_fks = []
+
         for table_name in tables:
             columns = inspector.get_columns(table_name)
+            pk_cols = inspector.get_pk_constraint(table_name).get("constrained_columns", [])
+            
+            # Extract literal FKs
+            fks = inspector.get_foreign_keys(table_name)
+            for fk in fks:
+                for idx, from_col in enumerate(fk["constrained_columns"]):
+                    all_fks.append({
+                        "from_table": table_name,
+                        "from_col": from_col,
+                        "to_table": fk["referred_table"],
+                        "to_col": fk["referred_columns"][idx]
+                    })
+
             col_infos = []
             for col in columns:
                 col_info = {
                     "name": col["name"],
                     "dtype": str(col["type"]),
                     "nullable": col.get("nullable", True),
+                    "primary_key": col["name"] in pk_cols,
                 }
-                # Collect sample values
+                # Sample values logic...
                 try:
                     with engine.connect() as conn:
                         rows = conn.execute(
@@ -83,7 +96,7 @@ def _profile_sqlite(file_path: str) -> dict:
                     col_info["sample_values"] = []
                 col_infos.append(col_info)
 
-            # Row count
+            # Row count...
             try:
                 with engine.connect() as conn:
                     row_count = conn.execute(text(f'SELECT COUNT(*) FROM "{table_name}"')).scalar()
@@ -97,12 +110,18 @@ def _profile_sqlite(file_path: str) -> dict:
                 "row_count": row_count,
             })
 
+        # Infer additional relationships
+        final_fks = infer_foreign_keys(result_tables, all_fks)
+        mermaid_erd = generate_mermaid_erd(result_tables, final_fks)
+
         return {
             "source_type": "sqlite",
             "dialect": "sqlite",
             "table_count": len(tables),
             "total_columns": sum(t["column_count"] for t in result_tables),
             "tables": result_tables,
+            "foreign_keys": final_fks,
+            "mermaid_erd": mermaid_erd,
             "all_column_names": [
                 f"{t['table']}.{c['name']}"
                 for t in result_tables

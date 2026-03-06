@@ -94,7 +94,24 @@ const api = {
   },
 
   // ── Users ──────────────────────────────────────────
+  // ── Generic Helpers ─────────────────────────────────────
+  async get(endpoint) {
+    const res = await apiFetch(endpoint);
+    if (!res.ok) throw new Error(`GET ${endpoint} failed: ${res.statusText}`);
+    return res.json();
+  },
+  async post(endpoint, data) {
+    const res = await apiFetch(endpoint, {
+      method: 'POST',
+      body: JSON.stringify(data)
+    });
+    if (!res.ok) throw new Error(`POST ${endpoint} failed: ${res.statusText}`);
+    return res.json();
+  },
+
+  // ── Users ─────────────────────────────────────────────
   async listUsers() {
+
     const res = await apiFetch('/users');
     if (!res.ok) throw new Error('Failed to load users');
     return res.json();
@@ -320,6 +337,39 @@ const api = {
   async getAnalysisHistory() {
     const res = await apiFetch('/analysis/history');
     if (!res.ok) throw new Error('Failed to load history');
+    return res.json();
+  },
+
+  async approveJob(jobId) {
+    const res = await apiFetch(`/analysis/${jobId}/approve`, {
+      method: 'POST',
+    });
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.detail || 'Approval failed');
+    }
+    return res.json();
+  },
+
+  // ── Generic Helpers ─────────────────────────────────
+  async get(path) {
+    const res = await apiFetch(path, { method: 'GET' });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.detail || `GET ${path} failed`);
+    }
+    return res.json();
+  },
+
+  async post(path, data) {
+    const res = await apiFetch(path, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.detail || `POST ${path} failed`);
+    }
     return res.json();
   },
 };

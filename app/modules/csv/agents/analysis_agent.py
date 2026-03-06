@@ -12,7 +12,7 @@ from __future__ import annotations
 import json
 from typing import Any, Dict
 
-from langchain_groq import ChatGroq
+from app.infrastructure.llm import get_llm
 
 from app.domain.analysis.entities import AnalysisState
 from app.infrastructure.config import settings
@@ -86,13 +86,9 @@ async def analysis_agent(state: AnalysisState) -> Dict[str, Any]:
     if state.get("policy_violation"):
         error_hint += f"\n[POLICY VIOLATION] Your previous plan was REJECTED for this reason: {state['policy_violation']}\nYou MUST adjust your plan to comply with organization policies."
 
-    llm = ChatGroq(
-        model_name="llama-3.3-70b-versatile",
-        groq_api_key=settings.GROCK_API_KEY,
-        temperature=0,
-    )
+    llm = get_llm(temperature=0)
 
-    schema_str = json.dumps(state.get("schema_summary", {}), indent=2)
+    schema_str = _format_compact_schema(state.get("schema_summary", {}))
     intent = state.get("intent", "comparison")
     columns = json.dumps(state.get("relevant_columns", []))
 
@@ -246,3 +242,24 @@ def _parse_json(content: str) -> Dict[str, Any]:
         content = "\n".join(inner_lines)
 
     return json.loads(content)
+
+
+def _format_compact_schema(schema_summary: Dict[str, Any]) -> str:
+    """Format the CSV schema summary into a highly compact, token-efficient string."""
+    columns = schema_summary.get("columns", [])
+    if not columns:
+        return json.dumps(schema_summary)
+        
+    lines = ["Columns & Data Types:"]
+    col_strs = []
+    for c in columns:
+        col_str = f"{c.get('name')} ({c.get('dtype')})"
+        if c.get("sample_values"):
+            # Truncate samples to just 1 token-friendly example
+            samples = [str(s)[:15] for s in c['sample_values'][:1]]
+            if samples and samples[0]:
+                col_str += f" [eg: {samples[0]}]"
+        col_strs.append("- " + col_str)
+        
+    lines.extend(col_strs)
+    return "\n".join(lines)

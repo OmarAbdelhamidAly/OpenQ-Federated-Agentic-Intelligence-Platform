@@ -11,7 +11,7 @@ from __future__ import annotations
 import json
 from typing import Any, Dict
 
-from langchain_groq import ChatGroq
+from app.infrastructure.llm import get_llm
 
 from app.domain.analysis.entities import AnalysisState
 from app.infrastructure.config import settings
@@ -52,99 +52,123 @@ Knowledge Base Context (if relevant):
 
 # ── Main Agent ────────────────────────────────────────────────────────────────
 
+# ── ReAct Agent ────────────────────────────────────────────────────────────────
+
+from langchain_core.messages import HumanMessage, SystemMessage, ToolMessage
+from langchain_core.utils.function_calling import convert_to_openai_tool
+import structlog
+
+logger = structlog.get_logger("app.debug.tokens")
+
+REACT_SYSTEM_PROMPT = """You are a SQL expert tasked with generating a high-quality SELECT query.
+You have access to a SQL execution tool to verify column names, schema details, or sample data.
+
+PROCESS:
+1. Review the Schema and Business Metrics.
+2. If you are unsure about a column or join, CALL the `run_sql_query` tool with a LIMIT 5 to test your assumptions.
+3. Iterate based on tool results.
+4. When you have the final, correct query, respond with a JSON block containing "query" and "params".
+
+RULES:
+- ONLY SELECT queries.
+- Use parameterised syntax (:param).
+- Use the provided Business Metrics logic.
+- NO destructive operations.
+
+Current Business Metrics: {metrics}
+Knowledge Base Context: {kb_context}
+"""
+
 async def analysis_agent(state: AnalysisState) -> Dict[str, Any]:
-    """Run the SQL analysis using an LLM-generated SELECT query.
-
-    Includes retry logic: up to 3 attempts on failure.
-    The LLM only generates the QUERY — actual execution goes through
-    the validated, injection-safe run_sql_query tool.
-    """
-    retry_count = state.get("retry_count", 0)
-    # If this is a retry due to an error, pass the error hint to the model
-    error_hint = ""
-    if state.get("error"):
-        error_hint = f"\n[RETRY HINT] Your previous query failed with this error: {state['error']}\nPlease fix the syntax or logic."
-    
-    if state.get("policy_violation"):
-        error_hint += f"\n[POLICY VIOLATION] Your previous plan was REJECTED for this reason: {state['policy_violation']}\nYou MUST adjust your query to comply with organization policies."
-
-    llm = ChatGroq(
-        model_name="llama-3.3-70b-versatile",
-        groq_api_key=settings.GROCK_API_KEY,
-        temperature=0,
-    )
-
-    schema_str = json.dumps(state.get("schema_summary", {}), indent=2)
-    intent = state.get("intent", "comparison")
-    columns = json.dumps(state.get("relevant_columns", []))
-
-    try:
-        return await _run_sql_analysis(
-            llm, state, schema_str, intent, columns, error_hint, retry_count
-        )
-    except Exception as exc:
-        return {
-            "error": str(exc),
-            "retry_count": retry_count + 1,
-        }
-
-
-# ── SQL Analysis ──────────────────────────────────────────────────────────────
-
-async def _run_sql_analysis(
-    llm, state, schema_str, intent, columns, error_hint, retry_count
-) -> Dict[str, Any]:
-    """Generate a SELECT query from the LLM and run it via run_sql_query tool."""
+    """ReAct agent that generates and validates SQL queries iteratively."""
     from app.modules.sql.tools.run_sql_query import run_sql_query
+    
+    llm = get_llm(temperature=0).bind_tools([run_sql_query])
 
     metrics_str = json.dumps(state.get("business_metrics", []), indent=2)
-    # Retrieve Knowledge Base context if kb_id is present
     kb_context = await get_kb_context(state.get("kb_id"), state["question"])
+    
+    # Base messages
+    messages = [
+        SystemMessage(content=REACT_SYSTEM_PROMPT.format(metrics=metrics_str, kb_context=kb_context or "None")),
+    ]
 
-    prompt = SQL_ANALYSIS_PROMPT.format(
-        metrics=metrics_str,
-        schema=schema_str,
-        question=state["question"],
-        intent=intent,
-        columns=columns,
-        kb_context=kb_context or "No relevant document context found.",
-        error_hint=error_hint,
-    )
+    # Add History if present
+    if state.get("history"):
+        for msg in state["history"]:
+            if msg["role"] == "user":
+                messages.append(HumanMessage(content=msg["content"]))
+            elif msg["role"] == "assistant":
+                messages.append(SystemMessage(content=msg["content"])) # Simplified history
 
-    response = await llm.ainvoke(prompt)
-    plan = _parse_json(response.content)
+    # Add Error/Violation hint if retrying
+    error_hint = ""
+    if state.get("error"):
+        error_hint += f"\n[RETRY HINT] Previous attempt failed: {state['error']}"
+    if state.get("policy_violation"):
+        error_hint += f"\n[POLICY VIOLATION] Previous attempt rejected: {state['policy_violation']}"
 
-    connection_string = get_connection_string(state)
-    if not connection_string:
-        return {
-            "error": "No SQL connection string available. Check your data source configuration.",
-            "retry_count": retry_count + 1,
-        }
+    # Current Request
+    compact_schema = _format_compact_schema(state.get('schema_summary', {}))
+    messages.append(HumanMessage(content=f"Question: {state['question']}\nSchema:\n{compact_schema}\n{error_hint}"))
 
-    query = plan.get("query", "")
-    params = plan.get("params", {})
+    # Simple manual ReAct loop (max 3 turns)
+    generated_sql = None
+    params = {}
+    steps = state.get("intermediate_steps") or []
+    
+    for turn in range(3):
+        response = await llm.ainvoke(messages)
+        
+        # Log token usage
+        if hasattr(response, "response_metadata") and "token_usage" in response.response_metadata:
+            usage = response.response_metadata["token_usage"]
+            logger.info("llm_token_usage", prompt_tokens=usage.get("prompt_tokens", 0), completion_tokens=usage.get("completion_tokens", 0), total_tokens=usage.get("total_tokens", 0))
 
-    if not query:
-        return {
-            "error": "LLM did not generate a SQL query.",
-            "retry_count": retry_count + 1,
-        }
+        messages.append(response)
+        
+        # Capture thought
+        if response.content:
+            steps.append({"role": "thought", "content": response.content})
+        
+        if not response.tool_calls:
+            try:
+                plan = _parse_json(response.content)
+                generated_sql = plan.get("query")
+                params = plan.get("params", {})
+                if generated_sql:
+                    break
+                else:
+                    messages.append(HumanMessage(content="The JSON did not contain a 'query' field. Please provide {'query': '...', 'params': {}}"))
+                    continue
+            except Exception as e:
+                messages.append(HumanMessage(content=f"Could not parse JSON. Error: {str(e)}. Please provide ONLY a valid JSON object: {{'query': '...', 'params': {{}}}}"))
+                continue
+        
+        for tool_call in response.tool_calls:
+            if tool_call["name"] == "run_sql_query":
+                args = tool_call["args"]
+                args["limit"] = 5
+                steps.append({"role": "tool_call", "tool": "run_sql_query", "args": args})
+                try:
+                    tool_output = run_sql_query.invoke(args)
+                    steps.append({"role": "tool_result", "content": "Query executed successfully."})
+                    messages.append(ToolMessage(content=json.dumps(tool_output), tool_call_id=tool_call["id"]))
+                except Exception as e:
+                    steps.append({"role": "tool_result", "content": f"Query failed: {str(e)}"})
+                    messages.append(ToolMessage(content=f"Error: {str(e)}", tool_call_id=tool_call["id"]))
 
-    result = run_sql_query.invoke({
-        "connection_string": connection_string,
-        "query": query,
-        "params": params,
-        "limit": 1000,
-    })
+    if not generated_sql:
+        return {"error": "Failed to generate a valid SQL query after ReAct iterations.", "intermediate_steps": steps}
 
     return {
+        "generated_sql": generated_sql,
         "analysis_results": {
-            "plan": {"query": query, "params": params},
+            "plan": {"query": generated_sql, "params": params},
             "source_type": "sql",
-            **result,
         },
-        "error": None,
-        "retry_count": retry_count,
+        "intermediate_steps": steps,
+        "error": None
     }
 
 
@@ -172,3 +196,36 @@ def _parse_json(content: str) -> Dict[str, Any]:
         content = "\n".join(inner_lines)
 
     return json.loads(content)
+
+
+def _format_compact_schema(schema_summary: Dict[str, Any]) -> str:
+    """Format the schema summary into a highly compact, token-efficient string."""
+    if not schema_summary.get("tables"):
+        return json.dumps(schema_summary)
+        
+    lines = []
+    
+    # Include ERD to strictly define joins
+    erd = schema_summary.get("mermaid_erd")
+    if erd:
+        lines.append("Data Relationships (ERD):")
+        lines.append(erd)
+        lines.append("")
+        
+    lines.append("Tables & Columns:")
+    for t in schema_summary.get("tables", []):
+        col_strs = []
+        for c in t.get("columns", []):
+            col_str = f"{c['name']} ({c['dtype']})"
+            if c.get("primary_key"):
+                col_str += " PK"
+            if c.get("sample_values"):
+                # heavily truncate samples to just 1 token-friendly example
+                samples = [str(s)[:15] for s in c['sample_values'][:1]]
+                if samples and samples[0]:
+                    col_str += f" [eg: {samples[0]}]"
+            col_strs.append(col_str)
+        lines.append(f"- {t['table']}: " + ", ".join(col_strs))
+        
+    return "\n".join(lines)
+

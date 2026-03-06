@@ -53,6 +53,15 @@ class AnalysisState(TypedDict, total=False):
     recommendations: Optional[List[Dict[str, Any]]]
     follow_up_suggestions: Optional[List[str]]
 
+    # ── Conversational Memory ─────────────────────────────────
+    history: Optional[List[Dict[str, str]]]  # List of {role, content}
+    thread_id: Optional[str]
+    
+    # ── HITL ──────────────────────────────────────────────────
+    generated_sql: Optional[str]
+    approval_granted: bool
+
     # ── Error Handling ────────────────────────────────────────
     error: Optional[str]
     retry_count: int
+    intermediate_steps: Optional[List[Dict[str, Any]]]

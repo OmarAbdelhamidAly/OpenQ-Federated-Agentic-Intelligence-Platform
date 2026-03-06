@@ -23,6 +23,67 @@ STATIC_DIR = Path(__file__).resolve().parent / "static"
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     """Application lifespan — startup and shutdown events."""
     logger.info("application_starting", log_level=settings.LOG_LEVEL)
+    
+    # ── Aggressive Self-Healing Database Schema ──
+    from sqlalchemy import text
+    from app.infrastructure.database.postgres import engine, Base
+    # Import all models to ensure they are registered with Base
+    from app.models import tenant, user, data_source, analysis_job, analysis_result, knowledge, metric, policy
+
+    logger.info("db_sync_started")
+    try:
+        # 1. Create all missing tables (safe if they already exist)
+        # Wrap in its own try/except to handle race conditions between workers
+        try:
+            async with engine.begin() as conn:
+                await conn.run_sync(Base.metadata.create_all)
+            logger.info("db_tables_synced")
+        except Exception as e:
+            if "already exists" in str(e).lower():
+                logger.info("db_tables_already_exists_skipping")
+            else:
+                logger.warning("db_tables_sync_warning", error=str(e))
+
+        # 2. Add missing columns and constraints individually
+        async def _safe_exec(sql: str):
+            try:
+                async with engine.begin() as conn:
+                    await conn.execute(text(sql))
+            except Exception as e:
+                err_str = str(e).lower()
+                if "already exists" not in err_str and "duplicate" not in err_str:
+                    logger.warning("db_sync_step_failed", sql=sql[:50], error=str(e))
+
+        # Add columns for SQL Workflow Enhancements
+        await _safe_exec("ALTER TABLE analysis_jobs ADD COLUMN IF NOT EXISTS generated_sql TEXT NULL")
+        await _safe_exec("ALTER TABLE analysis_jobs ADD COLUMN IF NOT EXISTS kb_id UUID NULL")
+        await _safe_exec("ALTER TABLE analysis_jobs ADD COLUMN IF NOT EXISTS thinking_steps JSON NULL")
+        
+        # Try to add the FK reference safely without Postgres logging errors if it exists
+        await _safe_exec("""
+            DO $$
+            BEGIN
+                IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_analysis_jobs_kb') THEN
+                    ALTER TABLE analysis_jobs ADD CONSTRAINT fk_analysis_jobs_kb FOREIGN KEY (kb_id) REFERENCES knowledge_bases(id) ON DELETE SET NULL;
+                END IF;
+            END $$;
+        """)
+
+        # Update status constraint safely
+        await _safe_exec("""
+            DO $$
+            BEGIN
+                ALTER TABLE analysis_jobs DROP CONSTRAINT IF EXISTS ck_analysis_jobs_status;
+                ALTER TABLE analysis_jobs ADD CONSTRAINT ck_analysis_jobs_status CHECK (status IN ('pending', 'running', 'done', 'error', 'awaiting_approval'));
+            EXCEPTION WHEN duplicate_object THEN
+                NULL;
+            END $$;
+        """)
+        
+        logger.info("db_sync_complete")
+    except Exception as exc:
+        logger.error("db_sync_critical_failure", error=str(exc))
+
     yield
     logger.info("application_shutting_down")
 

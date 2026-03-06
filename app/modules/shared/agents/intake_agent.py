@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from typing import Any, Dict
 
-from langchain_groq import ChatGroq
+from app.infrastructure.llm import get_llm
 
 from app.domain.analysis.entities import AnalysisState
 from app.infrastructure.config import settings
@@ -39,11 +39,7 @@ User Question: {question}"""
 
 async def intake_agent(state: AnalysisState) -> Dict[str, Any]:
     """Parse the user's question and determine analysis intent."""
-    llm = ChatGroq(
-        model_name="llama-3.3-70b-versatile",
-        groq_api_key=settings.GROCK_API_KEY,
-        temperature=0,
-    )
+    llm = get_llm(temperature=0)
 
     schema_str = json.dumps(state.get("schema_summary", {}), indent=2)
     metrics_str = json.dumps(state.get("business_metrics", []), indent=2)

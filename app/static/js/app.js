@@ -41,18 +41,25 @@ const routes = {
   knowledge: renderKnowledge,
   'kb-detail': renderKBDetail,
   policies: renderPolicies,
+  enrichment: renderEnrichment,
+  about: renderAbout,
 };
 
-function navigate(page) {
+function navigate(page, params) {
   if (!getAccessToken()) {
     renderAuth();
     return;
   }
+  if (params) window._pageParams = params;
+
   document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
   const activeNav = document.querySelector(`[data-page="${page}"]`);
   if (activeNav) activeNav.classList.add('active');
 
   const mainContent = document.getElementById('main-content');
+  const sidebar = document.getElementById('sidebar');
+  if (sidebar) sidebar.classList.remove('open');
+
   if (routes[page]) {
     renderPageWithSkeleton(page, mainContent);
   } else {
@@ -199,43 +206,47 @@ function renderApp() {
     <div class="app-layout">
       <aside class="sidebar" id="sidebar" style="background: var(--glass-bg); backdrop-filter: blur(var(--glass-blur)); border-right: 1px solid var(--glass-border);">
         <div class="sidebar-brand">
-          <div class="sidebar-brand-icon">🧠</div>
-          <span class="sidebar-brand-text">DataAnalyst.AI</span>
+          <div class="sidebar-brand-icon" style="color:var(--primary-400); margin-right:0.5rem; display:flex;">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 2a5 5 0 0 0-5 5v2a5 5 0 0 0-2 4.41V16a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-2.59A5 5 0 0 0 17 9V7a5 5 0 0 0-5-5z"/></svg>
+          </div>
+          <span class="sidebar-brand-text">DATAANALYST.AI</span>
         </div>
         <nav class="sidebar-nav">
           <div class="nav-section">Insights</div>
           <button class="nav-item active" data-page="dashboard" onclick="navigate('dashboard')">
-            <span class="nav-icon">📊</span> Overview
+            <span class="nav-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M21 12H3"/><path d="M12 3v18"/></svg></span> Overview
           </button>
           <button class="nav-item" data-page="analysis" onclick="navigate('analysis')">
-            <span class="nav-icon">🔍</span> Deep Analysis
+            <span class="nav-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg></span> Deep Analysis
           </button>
-          <button class="nav-item" data-page="metrics" onclick="navigate('metrics')">
-            <span class="nav-icon">📖</span> Metric Dictionary
-          </button>
-          <button class="nav-item" data-page="knowledge" onclick="navigate('knowledge')">
-            <span class="nav-icon">🧠</span> Knowledge Base
+          <button class="nav-item" data-page="enrichment" onclick="navigate('enrichment')">
+            <span class="nav-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="m9 12 2 2 4-4"/></svg></span> Enrichment & Rules
           </button>
           <div class="nav-section">Management</div>
           <button class="nav-item" data-page="data-sources" onclick="navigate('data-sources')">
-            <span class="nav-icon">📁</span> Data Sources
+            <span class="nav-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg></span> Data Sources
           </button>
           ${isAdmin ? `
           <button class="nav-item" data-page="users" onclick="navigate('users')">
-            <span class="nav-icon">👥</span> Team Access
-          </button>
-          <button class="nav-item" data-page="policies" onclick="navigate('policies')">
-            <span class="nav-icon">🛡️</span> Governance
+            <span class="nav-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg></span> Team Access
           </button>
           ` : ''}
+          <div class="nav-section">System</div>
+          <button class="nav-item" data-page="about" onclick="navigate('about')">
+            <span class="nav-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg></span> About
+          </button>
         </nav>
-        <div class="sidebar-user">
-          <div class="sidebar-avatar">${initials}</div>
-          <div class="sidebar-user-info">
-            <div class="sidebar-user-name">${user.email}</div>
-            <div class="sidebar-user-role">${user.role} Member</div>
+        <div class="sidebar-user" style="display:flex; justify-content:space-between; align-items:center;">
+          <div style="display:flex; align-items:center; gap:0.75rem;">
+            <div class="sidebar-avatar">${initials}</div>
+            <div class="sidebar-user-info">
+              <div class="sidebar-user-name">${user.email.split('@')[0]}</div>
+              <div class="sidebar-user-role">${user.role} Member</div>
+            </div>
           </div>
-          <button class="btn-icon" onclick="logout()" title="Sign out" style="border:none;background:transparent;">🚪</button>
+          <button class="btn-icon" onclick="logout()" title="Sign out" style="border:none;background:transparent;color:var(--text-muted);cursor:pointer;padding:0.5rem;font-size:1.1rem;transition:color 0.2s;">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path><polyline points="16 17 21 12 16 7"></polyline><line x1="21" y1="12" x2="9" y2="12"></line></svg>
+          </button>
         </div>
       </aside>
       <main class="main-content" id="main-content"></main>
@@ -282,7 +293,7 @@ async function renderDashboard(container) {
         <div class="card-header"><span class="card-title">Recent Intelligence</span></div>
         <div class="card-body" id="recent-analyses" style="padding:0;">
           <div class="empty-state" style="padding:4rem;">
-            <div class="empty-icon">🔍</div>
+            <div class="empty-icon"><svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg></div>
             <h3>No activity yet</h3>
             <p>Initiate an analysis to see insights here.</p>
           </div>
@@ -292,9 +303,9 @@ async function renderDashboard(container) {
         <div class="card-header"><span class="card-title">Quick Control</span></div>
         <div class="card-body">
           <div style="display:flex;flex-direction:column;gap:1rem;">
-            <button class="btn btn-secondary btn-full" onclick="navigate('data-sources')">📁 Manage Data</button>
-            <button class="btn btn-primary btn-full" onclick="navigate('analysis')">🔍 New Deep Analysis</button>
-            ${getUser()?.role === 'admin' ? '<button class="btn btn-secondary btn-full" onclick="navigate(\'users\')">👥 Team Access</button>' : ''}
+            <button class="btn btn-secondary btn-full" onclick="navigate('data-sources')">Manage Data</button>
+            <button class="btn btn-primary btn-full" onclick="navigate('analysis')">New Deep Analysis</button>
+            ${getUser()?.role === 'admin' ? '<button class="btn btn-secondary btn-full" onclick="navigate(\'users\')">Team Access</button>' : ''}
           </div>
         </div>
       </div>
@@ -439,6 +450,7 @@ async function renderDataSources(container) {
         closeSQLModal();
         showToast('SQL database connected! ✓', 'success');
         loadSources();
+        navigate('enrichment');
       } catch (e) { showToast(e.message, 'error'); }
     };
   }
@@ -471,6 +483,7 @@ async function handleUpload(file) {
 
     showToast(`"${file.name}" uploaded successfully!`, 'success');
     loadSources();
+    navigate('enrichment');
 
     // Hide progress bar after a short delay
     setTimeout(() => {
@@ -567,202 +580,269 @@ function closeSQLModal() { document.getElementById('sql-modal').classList.remove
 
 // ── Analysis Page ──────────────────────────────────────
 async function renderAnalysis(container) {
+  let initialSourceId = window._preselectedSourceId || '';
+  window._preselectedSourceId = null;
+  let qText = window._pageParams?.q || '';
+
   container.innerHTML = `
-    <div class="page-header">
+    <div class="page-header" style="margin-bottom:2rem;">
       <div>
         <h1 class="page-title">Deep Analysis</h1>
-        <p class="page-subtitle">Conversational intelligence powered by your data</p>
+        <p class="page-subtitle">Ask questions and generate comprehensive Power BI-style dashboards</p>
       </div>
     </div>
-    <div class="analysis-container">
-      <div class="analysis-main card">
-        <div class="card-body" style="display:flex;flex-direction:column;height:100%;padding:0;">
-          <div style="padding:1.5rem 2rem; border-bottom:1px solid var(--glass-border); display:grid; grid-template-columns:1fr 1fr; gap:1.5rem;">
-            <div>
-              <label class="form-label" style="margin-bottom:0.5rem;">Target Data Source</label>
-              <select class="form-select" id="analysis-source" style="background:rgba(255,255,255,0.03);"><option value="">Loading sources...</option></select>
-            </div>
-            <div>
-              <label class="form-label" style="margin-bottom:0.5rem;">🧠 Knowledge Base Context (RAG)</label>
-              <select class="form-select" id="analysis-kb" style="background:rgba(255,255,255,0.03);"><option value="">None (General analysis)</option></select>
-            </div>
-          </div>
-          <div class="analysis-messages" id="analysis-messages">
-            <div class="empty-state" style="padding:4rem;">
-              <div class="empty-icon">💡</div>
-              <h3>Intelligent Assistant</h3>
-              <p>Select a source and ask anything about your data.</p>
-            </div>
-          </div>
-          <div class="analysis-input-area" style="padding:1.5rem 2rem; background:rgba(255,255,255,0.02);">
-            <input class="analysis-input" id="analysis-query" placeholder="e.g. Compare revenue trends between this year and last year...">
-            <button class="btn btn-primary" id="btn-analyze">Run AI</button>
-          </div>
+
+    <!-- Power BI Analysis Card -->
+    <div class="pbi-analysis-card" style="margin-bottom:2.5rem; border:1px solid rgba(99,102,241,0.2); box-shadow:0 8px 32px rgba(0,0,0,0.2);">
+      <div class="pbi-header">
+        <div class="pbi-header-left">
+          <span class="pbi-icon">✨</span>
+          <span class="pbi-title">New Request</span>
         </div>
       </div>
-      <div class="results-sidebar" id="results-sidebar">
-        <div class="result-card">
-          <div class="result-card-header">📊 Neural visualization</div>
-          <div class="result-card-body" style="padding:1rem;"><div class="chart-container" id="chart-area" style="min-height:240px;display:flex;align-items:center;justify-content:center;color:var(--text-muted);font-size:0.9rem;">Charts will appear here</div></div>
+      <div class="pbi-body">
+        <div class="form-group" style="margin-bottom:1.5rem;">
+          <label class="form-label" style="font-weight:600; color:var(--text-light);">Select Data Source</label>
+          <select class="form-select" id="analysis-source" style="max-width:400px; background:rgba(255,255,255,0.03);"></select>
         </div>
-        <div class="result-card">
-          <div class="result-card-header">💡 AI Summary</div>
-          <div class="result-card-body" id="exec-summary" style="font-size:0.95rem;line-height:1.6;color:var(--text-dim);">Executive findings will be distilled here.</div>
+        
+        <div class="form-group" style="margin-bottom:1.5rem;">
+          <label class="form-label" style="font-weight:600; color:var(--text-light);">What would you like to analyze?</label>
+          <textarea class="form-input" id="analysis-q" rows="3" placeholder="e.g. Give me a comprehensive overview of our sales performance over the latest year, broken down by region and product category." style="background:rgba(255,255,255,0.03); resize:vertical;">${qText}</textarea>
         </div>
-        <div class="result-card">
-          <div class="result-card-header">🎯 Recommendation Engine</div>
-          <div class="result-card-body" id="recommendations" style="font-size:0.95rem;color:var(--text-dim);">Strategic actions will be predicted here.</div>
+
+        <div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:1rem;">
+          <div class="depth-selector" style="display:flex; align-items:center; gap:1rem;">
+            <label class="form-label" style="margin:0; font-weight:600; color:var(--text-light);">Number of Insights:</label>
+            <div class="pill-group" id="insight-count-pills">
+              <button class="pill-btn" data-value="1">1</button>
+              <button class="pill-btn" data-value="2">2</button>
+              <button class="pill-btn active" data-value="3">3</button>
+              <button class="pill-btn" data-value="4">4</button>
+              <button class="pill-btn" data-value="5">5</button>
+            </div>
+            <span style="font-size:0.8rem; color:var(--text-muted); margin-left:0.5rem;" id="insight-count-hint">Generates 3 distinct charts</span>
+          </div>
+          
+          <button class="btn btn-primary" id="btn-analyze" style="padding:0.75rem 2rem; font-weight:600; font-size:1rem; box-shadow:0 4px 12px rgba(99,102,241,0.3);">
+            🚀 Run Analysis
+          </button>
         </div>
       </div>
+    </div>
+    
+    <!-- PBI Results Grid (Auto-fitting) -->
+    <div id="pbi-results-grid" style="display:none; grid-template-columns: repeat(auto-fit, minmax(480px, 1fr)); gap:1.5rem; margin-bottom:3rem;">
     </div>
   `;
 
-  // Load sources for dropdown
   try {
     const data = await api.listDataSources();
     const select = document.getElementById('analysis-source');
     if (data.data_sources?.length) {
-      select.innerHTML = data.data_sources.map(s =>
-        `<option value="${s.id}">${s.name} (${s.type})</option>`
-      ).join('');
-      // Pre-select if coming from source dashboard
-      if (window._preselectedSourceId) {
-        select.value = window._preselectedSourceId;
-        window._preselectedSourceId = null;
-      }
+      select.innerHTML = data.data_sources.map(s => `<option value="${s.id}">${s.name} (${s.type})</option>`).join('');
+      if (initialSourceId) select.value = initialSourceId;
     } else {
       select.innerHTML = '<option value="">No data sources available</option>';
     }
-    // Load KBs for dropdown
-    try {
-      const kbData = await api.listKBs();
-      const kbSelect = document.getElementById('analysis-kb');
-      if (kbData.knowledge_bases?.length) {
-        kbSelect.innerHTML += kbData.knowledge_bases.map(kb =>
-          `<option value="${kb.id}">${kb.name}</option>`
-        ).join('');
-      }
-    } catch { }
+  } catch (e) { }
 
-    // Analyze button
-    document.getElementById('btn-analyze').onclick = submitAnalysis;
-    const inputEl = document.getElementById('analysis-query');
+  // Pill selector logic
+  const pills = document.querySelectorAll('#insight-count-pills .pill-btn');
+  const hint = document.getElementById('insight-count-hint');
+  let selectedCount = 3;
+  pills.forEach(p => {
+    p.onclick = () => {
+      pills.forEach(btn => btn.classList.remove('active'));
+      p.classList.add('active');
+      selectedCount = parseInt(p.dataset.value);
+      hint.textContent = selectedCount === 1 ? 'Generates 1 detailed chart' : `Generates ${selectedCount} distinct charts`;
+    };
+  });
 
-    inputEl.addEventListener('keypress', (e) => {
-      if (e.key === 'Enter') submitAnalysis();
-    });
+  document.getElementById('btn-analyze').onclick = submitCustomAnalysis;
+}
 
-    // Pre-fill question if navigated from AI Dashboard
-    if (window._prefilledQuestion) {
-      inputEl.value = window._prefilledQuestion;
-      window._prefilledQuestion = null;
-      // Auto-focus and simulate click if a source is also selected
-      if (document.getElementById('analysis-source').value) {
-        setTimeout(submitAnalysis, 300);
-      }
+function navigateToAnalysisWithQ(sourceId, q) {
+  navigate('analysis', { q, sourceId });
+}
+
+async function submitCustomAnalysis() {
+  const sourceId = document.getElementById('analysis-source').value;
+  const q = document.getElementById('analysis-q').value;
+  if (!sourceId || !q.trim()) return showToast('Please select source and enter a question', 'error');
+
+  const btn = document.getElementById('btn-analyze');
+  btn.disabled = true;
+  btn.textContent = 'Submitting...';
+
+  const grid = document.getElementById('pbi-results-grid');
+  grid.style.display = 'grid';
+  grid.innerHTML = '';
+
+  const countEl = document.querySelector('#insight-count-pills .pill-btn.active');
+  const count = countEl ? parseInt(countEl.dataset.value) : 3;
+  if (count === 1) grid.style.gridTemplateColumns = '1fr';
+  else if (count === 2) grid.style.gridTemplateColumns = '1fr 1fr';
+  else grid.style.gridTemplateColumns = 'repeat(auto-fit, minmax(480px, 1fr))';
+
+  try {
+    const payloads = [];
+    for (let i = 0; i < count; i++) {
+      payloads.push(api.post('/analysis/query', { source_id: sourceId, question: q, context_id: count > 1 ? `Insight ${i + 1}/${count}` : null }));
+    }
+
+    showToast(`Dispatching ${count} isolated worker(s)...`, 'info');
+    const results = await Promise.all(payloads);
+    btn.textContent = '🚀 Run Analysis';
+    btn.disabled = false;
+
+    // Create a panel for each job
+    for (let i = 0; i < results.length; i++) {
+      const jobId = results[i].job_id;
+      const panelHtml = `
+          <div class="pbi-panel" id="pbi-panel-${jobId}">
+            <div class="pbi-panel-header">
+              <span class="pbi-panel-title">Insight ${i + 1}</span>
+              <span class="pbi-panel-status badge badge-primary" id="pbi-status-${jobId}">Initializing...</span>
+            </div>
+            <div class="pbi-panel-chart" id="pbi-chart-${jobId}">
+              <div class="spinner"></div>
+            </div>
+            <div class="pbi-panel-insight" id="pbi-insight-${jobId}"></div>
+          </div>
+        `;
+      grid.insertAdjacentHTML('beforeend', panelHtml);
+
+      pollPBIPanel(jobId, sourceId);
     }
   } catch (e) {
-    console.error('renderAnalysis error:', e);
+    showToast(e.message, 'error');
+    btn.disabled = false;
+    btn.textContent = '🚀 Run Analysis';
   }
 }
 
-async function submitAnalysis() {
-  const sourceId = document.getElementById('analysis-source').value;
-  const kbId = document.getElementById('analysis-kb').value || null;
-  const question = document.getElementById('analysis-query').value.trim();
-  if (!sourceId || !question) return showToast('Select a source and enter a question', 'error');
-
-  const messages = document.getElementById('analysis-messages');
-
-  // Add user message
-  messages.innerHTML += `
-    <div class="message message-user">
-      <div class="message-avatar">👤</div>
-      <div class="message-content"><div class="message-text">${question}</div></div>
-    </div>
-  `;
-
-  // Add loading message
-  messages.innerHTML += `
-    <div class="message message-ai" id="ai-loading">
-      <div class="message-avatar">🧠</div>
-      <div class="message-content"><div class="message-text">Analyzing your data<span class="loading-dots"></span></div></div>
-    </div>
-  `;
-  messages.scrollTop = messages.scrollHeight;
-  document.getElementById('analysis-query').value = '';
-
-  try {
-    const job = await api.submitAnalysis(sourceId, question, kbId);
-
-    // Poll for results
-    let result = job;
-    let attempts = 0;
-    while (result.status === 'pending' || result.status === 'running') {
-      await new Promise(r => setTimeout(r, 2000));
-      result = await api.getJobStatus(job.id);
-      attempts++;
-      if (attempts > 60) break;
-    }
-
-    // Remove loading
-    document.getElementById('ai-loading')?.remove();
-
-    if (result.status === 'done') {
-      const r = await api.getJobResult(job.id);
-      messages.innerHTML += `
-        <div class="message message-ai">
-          <div class="message-avatar">🧠</div>
-          <div class="message-content">
-            <div class="message-text">${r.insight_report || 'Analysis complete.'}</div>
-            ${r.follow_up_suggestions?.length ? `
-            <div class="suggestions">
-              ${r.follow_up_suggestions.map(s => `<button class="suggestion-chip" onclick="document.getElementById('analysis-query').value='${s}';submitAnalysis();">${s}</button>`).join('')}
-            </div>` : ''}
-          </div>
-        </div>
-      `;
-
-      // Update sidebar
-      if (r.exec_summary) document.getElementById('exec-summary').textContent = r.exec_summary;
-      if (r.chart_json) {
-        document.getElementById('chart-area').innerHTML = '';
-        loadPlotly().then(Plotly => {
-          Plotly.newPlot('chart-area', r.chart_json.data, r.chart_json.layout, { responsive: true });
-        }).catch(err => {
-          console.error('Plotly load error:', err);
-          document.getElementById('chart-area').innerHTML = `<div class="error-state">Failed to load chart library.</div>`;
-        });
+async function pollPBIPanel(jobId, sourceId) {
+  let attempts = 0;
+  while (attempts < 90) {
+    try {
+      const st = await api.get(`/analysis/${jobId}`);
+      const s = st.status;
+      const statusEl = document.getElementById(`pbi-status-${jobId}`);
+      if (statusEl) {
+        if (s === 'done') {
+          return _renderPBIPanel(jobId, await api.get(`/analysis/${jobId}/result`), sourceId);
+        } else if (s === 'failed') {
+          return _setPBIPanelError(jobId, st.error || 'Failed to complete analysis');
+        } else if (s === 'awaiting_approval') {
+          return _renderApprovalState(jobId, st.sql_query, st.explanation);
+        } else {
+          statusEl.textContent = s.replace('_', ' ').toUpperCase();
+        }
       }
-      if (r.recommendations?.length) {
-        document.getElementById('recommendations').innerHTML = r.recommendations.map(rec => `
-          <div class="recommendation-item">
-            <div class="rec-action">${rec.action}</div>
-            <div class="rec-impact">${rec.expected_impact || ''}</div>
-            <div class="rec-confidence">Confidence: ${rec.confidence_score || '—'}%</div>
-          </div>
-        `).join('');
-      }
-    } else {
-      messages.innerHTML += `
-        <div class="message message-ai">
-          <div class="message-avatar">🧠</div>
-          <div class="message-content"><div class="message-text">Analysis is still processing. Check back shortly or refresh the page.</div></div>
+    } catch (e) { console.warn('Poll error', e); }
+    await new Promise(r => setTimeout(r, 3000));
+    attempts++;
+  }
+  _setPBIPanelError(jobId, 'Analysis timed out');
+}
+
+function _renderApprovalState(jobId, sql, intent) {
+  const statusEl = document.getElementById(`pbi-status-${jobId}`);
+  const chartEl = document.getElementById(`pbi-chart-${jobId}`);
+  const panelEl = document.getElementById(`pbi-panel-${jobId}`);
+
+  if (statusEl) { statusEl.className = 'pbi-panel-status badge badge-warning'; statusEl.textContent = 'Needs Review'; }
+  if (panelEl) panelEl.style.borderColor = 'var(--warning-500)';
+
+  if (chartEl) {
+    chartEl.innerHTML = `
+      <div style="padding:1rem; height:100%; display:flex; flex-direction:column;">
+        <h4 style="color:var(--warning-500); margin-bottom:0.5rem; display:flex; align-items:center; gap:0.5rem;">⚠️ Approval Required</h4>
+        <p style="font-size:0.85rem; color:var(--text-light); margin-bottom:0.75rem;"><strong>AI Intent:</strong> ${intent || 'To securely fetch your data.'}</p>
+        <div style="background:rgba(0,0,0,0.3); padding:0.75rem; border-radius:6px; flex:1; overflow-y:auto; overflow-x:auto; margin-bottom:1rem; border:1px solid rgba(255,255,255,0.05);">
+          <code style="color:#60A5FA; font-size:0.8rem; white-space:pre;">${sql || 'SELECT * FROM ...'}</code>
         </div>
-      `;
-    }
-  } catch (e) {
-    document.getElementById('ai-loading')?.remove();
-    messages.innerHTML += `
-      <div class="message message-ai">
-        <div class="message-avatar">🧠</div>
-        <div class="message-content"><div class="message-text" style="color:var(--error-400)">Error: ${e.message}</div></div>
+        <div style="display:flex; gap:0.75rem; justify-content:flex-end;">
+          <button class="btn btn-sm btn-secondary" onclick="cancelJob('${jobId}')" style="color:var(--error-500);">Cancel</button>
+          <button class="btn btn-sm btn-primary" onclick="approveJob('${jobId}')" style="background:var(--success-500); border-color:var(--success-500);">✓ Approve & Run</button>
+        </div>
       </div>
     `;
   }
-  messages.scrollTop = messages.scrollHeight;
 }
 
+async function approveJob(jobId) {
+  try {
+    await api.post(`/analysis/${jobId}/approve`, {});
+    const statusEl = document.getElementById(`pbi-status-${jobId}`);
+    const panelEl = document.getElementById(`pbi-panel-${jobId}`);
+    const chartEl = document.getElementById(`pbi-chart-${jobId}`);
+    if (statusEl) { statusEl.className = 'pbi-panel-status badge badge-primary'; statusEl.textContent = 'Resuming...'; }
+    if (panelEl) panelEl.style.borderColor = '';
+    if (chartEl) chartEl.innerHTML = '<div class="spinner"></div>';
+
+    pollPBIPanel(jobId, null);
+  } catch (e) {
+    showToast(e.message, 'error');
+  }
+}
+
+async function cancelJob(jobId) {
+  const panelEl = document.getElementById(`pbi-panel-${jobId}`);
+  if (panelEl) panelEl.style.borderColor = '';
+  _setPBIPanelError(jobId, 'Analysis cancelled by user');
+  showToast('Analysis cancelled', 'info');
+}
+
+async function _renderPBIPanel(jobId, result, sourceId) {
+  const statusEl = document.getElementById(`pbi-status-${jobId}`);
+  const chartEl = document.getElementById(`pbi-chart-${jobId}`);
+  const insightEl = document.getElementById(`pbi-insight-${jobId}`);
+  const panelEl = document.getElementById(`pbi-panel-${jobId}`);
+
+  if (statusEl) { statusEl.className = 'pbi-panel-status badge badge-success'; statusEl.textContent = '✓ Ready'; }
+  if (panelEl) panelEl.classList.add('done');
+
+  // Render chart
+  if (chartEl && result.chart_json) {
+    try {
+      const Plotly = await loadPlotly();
+      chartEl.innerHTML = '';
+      const layout = {
+        ...(result.chart_json.layout || {}),
+        paper_bgcolor: 'rgba(0,0,0,0)',
+        plot_bgcolor: 'rgba(12,16,36,0.6)',
+        font: { color: '#cbd5e1', family: 'Inter, sans-serif', size: 11 },
+        margin: { t: 28, b: 40, l: 50, r: 16 },
+        legend: { bgcolor: 'rgba(0,0,0,0)', font: { color: '#94a3b8' } },
+        xaxis: { ...(result.chart_json.layout?.xaxis || {}), gridcolor: 'rgba(255,255,255,0.05)', linecolor: 'rgba(255,255,255,0.1)' },
+        yaxis: { ...(result.chart_json.layout?.yaxis || {}), gridcolor: 'rgba(255,255,255,0.05)', linecolor: 'rgba(255,255,255,0.1)' },
+      };
+      Plotly.newPlot(chartEl, result.chart_json.data, layout, { responsive: true, displayModeBar: false });
+    } catch (e) {
+      chartEl.innerHTML = '<div class="pbi-no-chart">Chart unavailable</div>';
+    }
+  } else if (chartEl) {
+    chartEl.innerHTML = '<div class="pbi-no-chart">No chart generated</div>';
+  }
+
+  // Render insight
+  if (insightEl) {
+    const text = result.executive_summary || result.insight_report || '';
+    insightEl.innerHTML = text
+      ? `<div class="pbi-insight-text">${text}</div>`
+      : `<div class="pbi-insight-text" style="color:var(--text-muted)">No insight summary returned.</div>`;
+  }
+}
+
+function _setPBIPanelError(jobId, msg) {
+  const statusEl = document.getElementById(`pbi-status-${jobId}`);
+  const chartEl = document.getElementById(`pbi-chart-${jobId}`);
+  if (statusEl) { statusEl.className = 'pbi-panel-status badge badge-danger'; statusEl.textContent = 'Error'; }
+  if (chartEl) chartEl.innerHTML = `<div class="pbi-no-chart" style="color:var(--error-500)">${msg}</div>`;
+}
 // ── Users Page ─────────────────────────────────────────
 async function renderUsers(container) {
   container.innerHTML = `
@@ -799,18 +879,21 @@ async function renderUsers(container) {
 
   loadUsers();
 
-  document.getElementById('btn-invite').onclick = async () => {
-    try {
-      await api.inviteUser(
-        document.getElementById('invite-email').value,
-        document.getElementById('invite-password').value,
-        document.getElementById('invite-role').value,
-      );
-      closeInviteModal();
-      showToast('Invitation sent! ✓', 'success');
-      loadUsers();
-    } catch (e) { showToast(e.message, 'error'); }
-  };
+  const btnInvite = document.getElementById('btn-invite');
+  if (btnInvite) {
+    btnInvite.onclick = async () => {
+      try {
+        await api.inviteUser(
+          document.getElementById('invite-email').value,
+          document.getElementById('invite-password').value,
+          document.getElementById('invite-role').value,
+        );
+        closeInviteModal();
+        showToast('Invitation sent! ✓', 'success');
+        loadUsers();
+      } catch (e) { showToast(e.message, 'error'); }
+    };
+  }
 }
 
 async function loadUsers() {
@@ -1542,3 +1625,230 @@ async function handlePolicyDelete(id) {
 function showPolicyModal() { document.getElementById('policy-modal').classList.add('open'); }
 function closePolicyModal() { document.getElementById('policy-modal').classList.remove('open'); }
 
+
+// ── Enrichment Page ───────────────────────────────────────
+async function renderEnrichment(container) {
+  const isAdmin = getUser()?.role === 'admin';
+  container.innerHTML = `
+    <div class="page-header" style="margin-bottom:2rem;">
+      <div>
+        <h1 class="page-title">Data Enrichment & Rules</h1>
+        <p class="page-subtitle">Define business logic, organizational context, and safety guardrails.</p>
+      </div>
+      <button class="btn btn-primary" onclick="navigate('dashboard')" style="background:var(--primary-600); border:none; box-shadow:0 4px 12px rgba(99,102,241,0.3);">
+        Finish & View Dashboard 👉
+      </button>
+    </div>
+
+    <!-- Modals (hidden by default) -->
+    <div class="modal-overlay" id="metric-modal">
+      <div class="modal">
+        <div class="modal-header"><h3 class="modal-title">Define Business Metric</h3><button class="btn-icon" onclick="closeMetricModal()">✕</button></div>
+        <div class="modal-body">
+          <div class="form-group"><label class="form-label">Metric Name</label><input class="form-input" id="metric-name" placeholder="e.g. MRR"></div>
+          <div class="form-group"><label class="form-label">Calculation Logic</label><textarea class="form-input" id="metric-logic" rows="4" placeholder="Sum of active subscriptions..."></textarea></div>
+        </div>
+        <div class="modal-footer"><button class="btn btn-secondary" onclick="closeMetricModal()">Cancel</button><button class="btn btn-primary" id="btn-save-metric">Save</button></div>
+      </div>
+    </div>
+
+    <div class="modal-overlay" id="kb-modal">
+      <div class="modal">
+        <div class="modal-header"><h3 class="modal-title">Upload Knowledge Document</h3><button class="btn-icon" onclick="closeKBModal()">✕</button></div>
+        <div class="modal-body">
+          <div class="form-group"><label class="form-label">Title / Subject</label><input class="form-input" id="kb-title" placeholder="e.g. Q3 Marketing Plan"></div>
+          <div class="form-group"><label class="form-label">Upload File</label><input type="file" id="kb-file" class="form-input" accept=".txt,.md,.pdf,.csv"></div>
+        </div>
+        <div class="modal-footer"><button class="btn btn-secondary" onclick="closeKBModal()">Cancel</button><button class="btn btn-primary" id="btn-upload-kb">Upload</button></div>
+      </div>
+    </div>
+
+    <div class="modal-overlay" id="policy-modal">
+      <div class="modal">
+        <div class="modal-header"><h3 class="modal-title">Create Data Policy</h3><button class="btn-icon" onclick="closePolicyModal()">✕</button></div>
+        <div class="modal-body">
+          <div class="form-group"><label class="form-label">Policy Title</label><input class="form-input" id="policy-title" placeholder="e.g. PII Masking"></div>
+          <div class="form-group"><label class="form-label">Rules</label><textarea class="form-input" id="policy-content" rows="4" placeholder="Never expose SSN..."></textarea></div>
+        </div>
+        <div class="modal-footer"><button class="btn btn-secondary" onclick="closePolicyModal()">Cancel</button><button class="btn btn-primary" id="btn-save-policy">Save</button></div>
+      </div>
+    </div>
+
+    <div class="enrichment-grid" style="display:grid; grid-template-columns:repeat(auto-fit, minmax(320px, 1fr)); gap:1.5rem;">
+      <div class="card enrichment-card">
+        <div class="card-header">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1rem;">
+            <span class="card-title">📖 Metric Dictionary</span>
+            ${isAdmin ? `<button class="btn btn-sm btn-primary" onclick="showMetricModal()">➕ Add</button>` : ''}
+          </div>
+          <div class="card-context" style="font-size:0.85rem; padding:0.75rem; background:rgba(255,255,255,0.03); border-radius:8px; border-left:3px solid var(--primary-500);">
+            <div style="margin-bottom:0.4rem;"><strong>Description:</strong> Define business KPIs and calculation logic.</div>
+            <div style="color:var(--primary-400); font-weight:600;">✨ Importance: Ensures the AI uses your formulas, preventing calculation errors.</div>
+          </div>
+        </div>
+        <div class="card-body" id="metrics-list" style="max-height:400px; overflow-y:auto;">
+          <div style="text-align:center;padding:2rem;"><div class="spinner" style="margin:0 auto;"></div></div>
+        </div>
+      </div>
+
+      <div class="card enrichment-card">
+        <div class="card-header">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1rem;">
+            <span class="card-title">🧠 Knowledge Base</span>
+            ${isAdmin ? `<button class="btn btn-sm btn-primary" onclick="showKBModal()">➕ New</button>` : ''}
+          </div>
+          <div class="card-context" style="font-size:0.85rem; padding:0.75rem; background:rgba(255,255,255,0.03); border-radius:8px; border-left:3px solid var(--accent-500);">
+            <div style="margin-bottom:0.4rem;"><strong>Description:</strong> Upload documents for contextual background.</div>
+            <div style="color:var(--accent-400); font-weight:600;">✨ Importance: Provides company-specific context (PDFs, guides) that isn't in your db.</div>
+          </div>
+        </div>
+        <div class="card-body" id="kb-list" style="display:grid; grid-template-columns:1fr; gap:1rem; max-height:400px; overflow-y:auto;">
+          <div style="text-align:center;padding:2rem;"><div class="spinner" style="margin:0 auto;"></div></div>
+        </div>
+      </div>
+
+      <div class="card enrichment-card">
+        <div class="card-header">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1rem;">
+            <span class="card-title">🛡️ Safety & Governance</span>
+            ${isAdmin ? `<button class="btn btn-sm btn-primary" onclick="showPolicyModal()">🛡️ Add</button>` : ''}
+          </div>
+          <div class="card-context" style="font-size:0.85rem; padding:0.75rem; background:rgba(255,255,255,0.03); border-radius:8px; border-left:3px solid #EF4444;">
+            <div style="margin-bottom:0.4rem;"><strong>Description:</strong> Set rules for data access and behavior.</div>
+            <div style="color:#EF4444; font-weight:600;">✨ Importance: Maintains enterprise-grade security and compliance.</div>
+          </div>
+        </div>
+        <div class="card-body" id="policies-list" style="display:grid; grid-template-columns:1fr; gap:1rem; max-height:400px; overflow-y:auto;">
+          <div style="text-align:center;padding:2rem;"><div class="spinner" style="margin:0 auto;"></div></div>
+        </div>
+      </div>
+    </div>
+  `;
+
+  if (window.loadMetrics) loadMetrics();
+  if (window.loadDocuments) loadDocuments();
+  if (window.loadPolicies) loadPolicies();
+
+  const saveMetricBtn = document.getElementById('btn-save-metric');
+  if (saveMetricBtn) {
+    saveMetricBtn.onclick = async () => {
+      try {
+        await api.createMetric({ name: document.getElementById('metric-name').value, logic: document.getElementById('metric-logic').value, source_id: null });
+        closeMetricModal();
+        showToast('Metric created', 'success');
+        if (window.loadMetrics) loadMetrics();
+      } catch (e) { showToast(e.message, 'error'); }
+    };
+  }
+
+  const uploadKbBtn = document.getElementById('btn-upload-kb');
+  if (uploadKbBtn) {
+    uploadKbBtn.onclick = async () => {
+      const file = document.getElementById('kb-file').files[0];
+      const title = document.getElementById('kb-title').value;
+      if (!file || !title) return showToast('Title and file required', 'error');
+      try {
+        await handleKBFileUpload(file, title);
+        closeKBModal();
+        if (window.loadDocuments) loadDocuments();
+      } catch (e) { showToast(e.message, 'error'); }
+    };
+  }
+
+  const savePolicyBtn = document.getElementById('btn-save-policy');
+  if (savePolicyBtn) {
+    savePolicyBtn.onclick = async () => {
+      try {
+        await api.post('/policies', { name: document.getElementById('policy-title').value, rules: document.getElementById('policy-content').value, description: document.getElementById('policy-content').value });
+        closePolicyModal();
+        showToast('Policy created', 'success');
+        if (window.loadPolicies) loadPolicies();
+      } catch (e) { showToast(e.message, 'error'); }
+    };
+  }
+}
+
+window.showMetricModal = window.showMetricModal || function () { document.getElementById('metric-modal')?.classList.add('open'); };
+window.closeMetricModal = window.closeMetricModal || function () { document.getElementById('metric-modal')?.classList.remove('open'); };
+window.showKBModal = window.showKBModal || function () { document.getElementById('kb-modal')?.classList.add('open'); };
+window.closeKBModal = window.closeKBModal || function () { document.getElementById('kb-modal')?.classList.remove('open'); };
+window.showPolicyModal = window.showPolicyModal || function () { document.getElementById('policy-modal')?.classList.add('open'); };
+window.closePolicyModal = window.closePolicyModal || function () { document.getElementById('policy-modal')?.classList.remove('open'); };
+
+// ── About Page ──────────────────────────────────────────
+async function renderAbout(container) {
+  container.innerHTML = `
+    <div class="page-header" style="margin-bottom:2.5rem; text-align:center;">
+      <div>
+        <h1 class="page-title" style="font-size:2.5rem; letter-spacing:-0.5px; background: linear-gradient(to right, #ffffff, #94a3b8); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">DATAANALYST.AI</h1>
+        <p class="page-subtitle" style="font-size:1.1rem; max-width:600px; margin:0 auto; color:var(--text-muted);">The intelligent engine transforming raw data into actionable enterprise insights.</p>
+      </div>
+    </div>
+
+    <div style="max-width:900px; margin:0 auto;">
+      
+      <!-- Hero Section -->
+      <div class="card" style="margin-bottom:3rem; padding:3.5rem 2.5rem; text-align:center; background: var(--glass-bg); backdrop-filter: blur(var(--glass-blur)); border: 1px solid var(--glass-border); border-top: 2px solid var(--primary-500); box-shadow: 0 20px 40px rgba(0,0,0,0.3);">
+        <h2 style="font-size:1.75rem; font-weight:500; margin-bottom:1.5rem; color:var(--text-light); letter-spacing: -0.5px;">Democratizing Data Science</h2>
+        <p style="font-size:1.05rem; color:var(--text-muted); max-width:650px; margin:0 auto; line-height:1.75;">
+          DataAnalyst.AI empowers teams to make targeted, data-driven decisions without requiring a dedicated engineering department. By establishing secure, direct connections to your databases and contextual documents, we transition complex analytical workloads into intuitive conversations.
+        </p>
+      </div>
+
+      <!-- Core Capabilities Grid -->
+      <div style="display:flex; align-items:center; gap:1rem; margin-bottom:1.5rem;">
+        <h3 style="margin:0; font-size:1.25rem; font-weight:500; color:var(--text-light);">Core Architecture</h3>
+        <div style="flex:1; height:1px; background:var(--glass-border);"></div>
+      </div>
+      
+      <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(260px, 1fr)); gap:1.5rem; margin-bottom:4rem;">
+        
+        <div class="card" style="padding:2rem 1.5rem; background:rgba(255,255,255,0.015); border:1px solid rgba(255,255,255,0.05); transition:transform 0.2s;">
+          <div style="height:48px; width:48px; border-radius:12px; background:rgba(99,102,241,0.1); display:flex; align-items:center; justify-content:center; margin-bottom:1.25rem; color:var(--primary-400);">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M21 12H3"/><path d="M12 3v18"/></svg>
+          </div>
+          <h4 style="margin-bottom:0.75rem; color:var(--text-light); font-weight:500; font-size:1.1rem;">Multi-Insight Generation</h4>
+          <p style="font-size:0.9rem; color:var(--text-muted); line-height:1.6; margin:0;">
+            Produce comprehensive dashboards through a single natural language prompt. Specialized agents analyze inputs to compute optimal visual representation, rendering discrete, dynamic Plotly components.
+          </p>
+        </div>
+
+        <div class="card" style="padding:2rem 1.5rem; background:rgba(255,255,255,0.015); border:1px solid rgba(255,255,255,0.05); transition:transform 0.2s;">
+          <div style="height:48px; width:48px; border-radius:12px; background:rgba(245,158,11,0.1); display:flex; align-items:center; justify-content:center; margin-bottom:1.25rem; color:var(--warning-400);">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="m9 12 2 2 4-4"/></svg>
+          </div>
+          <h4 style="margin-bottom:0.75rem; color:var(--text-light); font-weight:500; font-size:1.1rem;">HITL Security Model</h4>
+          <p style="font-size:0.9rem; color:var(--text-muted); line-height:1.6; margin:0;">
+            Maintain strict governance overhead with Human-in-the-Loop workflows. AI-generated SQL execution intent is suspended, requiring explicit manual sign-off before hitting production workloads.
+          </p>
+        </div>
+
+        <div class="card" style="padding:2rem 1.5rem; background:rgba(255,255,255,0.015); border:1px solid rgba(255,255,255,0.05); transition:transform 0.2s;">
+          <div style="height:48px; width:48px; border-radius:12px; background:rgba(16,185,129,0.1); display:flex; align-items:center; justify-content:center; margin-bottom:1.25rem; color:var(--success-400);">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.29 7 12 12 20.71 7"/><line x1="12" y1="22" x2="12" y2="12"/></svg>
+          </div>
+          <h4 style="margin-bottom:0.75rem; color:var(--text-light); font-weight:500; font-size:1.1rem;">Unified Context Engine</h4>
+          <p style="font-size:0.9rem; color:var(--text-muted); line-height:1.6; margin:0;">
+            Automatically harmonize structured rule ingestion (SQL logic and formulas) with unstructured Retrieval-Augmented Generation (RAG docs) for deeply contextual, highly-accurate AI formulation.
+          </p>
+        </div>
+
+      </div>
+
+      <!-- Tech Stack -->
+      <div class="card" style="padding:2.5rem; margin-bottom:3rem; background:var(--glass-bg); border:1px solid var(--glass-border);">
+        <h3 style="margin:0 0 1.5rem 0; font-size:1.25rem; font-weight:500; color:var(--text-light);">Deployment Stack</h3>
+        <p style="color:var(--text-muted); line-height:1.6; margin-bottom:2rem; max-width:700px; font-size:0.95rem;">
+          At its core, DataAnalyst.AI utilizes a scalable multi-agent infrastructure. Independent worker agents collaborate seamlessly to map logical database relationships (ERD discovery), synthesize optimized sequential queries, and assemble final state reporting blocks.
+        </p>
+        <div style="display:flex; gap:0.75rem; flex-wrap:wrap;">
+          <span class="badge" style="background:rgba(255,255,255,0.03); color:var(--text-light); padding:0.5rem 1rem; font-size:0.8rem; border:1px solid rgba(255,255,255,0.1); border-radius:20px; font-weight:400; letter-spacing:0.5px;">AUTONOMOUS AGENTS</span>
+          <span class="badge" style="background:rgba(255,255,255,0.03); color:var(--text-light); padding:0.5rem 1rem; font-size:0.8rem; border:1px solid rgba(255,255,255,0.1); border-radius:20px; font-weight:400; letter-spacing:0.5px;">RAG VECTORIZATION</span>
+          <span class="badge" style="background:rgba(255,255,255,0.03); color:var(--text-light); padding:0.5rem 1rem; font-size:0.8rem; border:1px solid rgba(255,255,255,0.1); border-radius:20px; font-weight:400; letter-spacing:0.5px;">SEMANTIC SQL LAYER</span>
+          <span class="badge" style="background:rgba(255,255,255,0.03); color:var(--text-light); padding:0.5rem 1rem; font-size:0.8rem; border:1px solid rgba(255,255,255,0.1); border-radius:20px; font-weight:400; letter-spacing:0.5px;">ENTERPRISE GOVERNANCE</span>
+          <span class="badge" style="background:rgba(255,255,255,0.03); color:var(--text-light); padding:0.5rem 1rem; font-size:0.8rem; border:1px solid rgba(255,255,255,0.1); border-radius:20px; font-weight:400; letter-spacing:0.5px;">INTERACTIVE PLOTLY JS</span>
+        </div>
+      </div>
+    </div>
+  `;
+}

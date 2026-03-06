@@ -21,6 +21,8 @@ from app.schemas.analysis import (
     AnalysisJobResponse,
     AnalysisQueryRequest,
     AnalysisResultResponse,
+    ProblemDiagnosisRequest,
+    ProblemDiagnosisResponse,
 )
 
 logger = structlog.get_logger(__name__)
@@ -65,6 +67,7 @@ async def submit_query(
         question=body.question,
         kb_id=body.kb_id,
         status="pending",
+        thinking_steps=[],
     )
     db.add(job)
     await db.flush()
@@ -195,3 +198,80 @@ async def get_result(
         )
 
     return AnalysisResultResponse.model_validate(analysis_result)
+@router.post("/{job_id}/approve", response_model=AnalysisJobResponse)
+async def approve_job(
+    job_id: uuid.UUID,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> AnalysisJobResponse:
+    """Approve a paused analysis job and resume its execution."""
+    query = select(AnalysisJob).where(
+        AnalysisJob.id == job_id,
+        AnalysisJob.tenant_id == current_user.tenant_id,
+        AnalysisJob.status == "awaiting_approval",
+    )
+    
+    if current_user.role != "admin":
+        query = query.where(AnalysisJob.user_id == current_user.id)
+
+    result = await db.execute(query)
+    job = result.scalar_one_or_none()
+    if job is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Paused analysis job not found",
+        )
+
+    # Update state to running and resume
+    job.status = "running"
+    await db.commit()
+    await db.refresh(job)
+
+    # Update the LangGraph state in the checkpointer to grant approval
+    try:
+        from app.use_cases.analysis.run_pipeline import get_pipeline
+        pipeline = get_pipeline("sql") # We know it's SQL if it's hitl for now
+        config = {"configurable": {"thread_id": str(job.id)}}
+        # Mark as approved in the state
+        await pipeline.aupdate_state(config, {"approval_granted": True})
+    except Exception as e:
+        logger.error("state_update_failed", error=str(e), job_id=str(job.id))
+
+    # Re-dispatch to worker
+    try:
+        from app.worker import run_analysis_pipeline
+        run_analysis_pipeline.delay(str(job.id))
+    except Exception:
+        logger.warning("approval_dispatch_failed", job_id=str(job.id))
+
+    return AnalysisJobResponse.model_validate(job)
+
+
+@router.post("/diagnose", response_model=ProblemDiagnosisResponse)
+async def submit_diagnosis(
+    body: Annotated[ProblemDiagnosisRequest, Body()],
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> ProblemDiagnosisResponse:
+    """Analyze a business problem and suggest diagnostic scenarios."""
+    # Verify source belongs to tenant
+    result = await db.execute(
+        select(DataSource).where(
+            DataSource.id == body.source_id,
+            DataSource.tenant_id == current_user.tenant_id,
+        )
+    )
+    source = result.scalar_one_or_none()
+    if source is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Data source not found",
+        )
+
+    from app.use_cases.analysis.diagnose_service import diagnose_problem
+    
+    # Use schema if available, otherwise suggest generic analysis
+    schema = source.schema_json or {}
+    diagnosis = await diagnose_problem(body.problem_description, schema)
+    
+    return ProblemDiagnosisResponse(**diagnosis)

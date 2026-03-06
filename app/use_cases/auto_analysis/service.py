@@ -17,7 +17,7 @@ import uuid
 from typing import Any, Dict, List, Optional
 
 import structlog
-from langchain_groq import ChatGroq
+from app.infrastructure.llm import get_llm
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -85,30 +85,38 @@ async def run_auto_analysis(source_id: str, db: AsyncSession) -> None:
     await db.commit()
 
     try:
-        # Step 1: Generate domain + questions from schema
-        schema_str = json.dumps(source.schema_json or {}, indent=2)
-        domain_type, questions = await _generate_questions(schema_str)
+        # Step 2: NEW - Generate domain + questions from schema
+        # Compact JSON (no whitespace) saves ~40% tokens for large schemas
+        schema_str = json.dumps(source.schema_json or {}, separators=(',', ':'))
+        domain_type, suggested_questions = await _generate_questions(schema_str)
+
+        # Estimate tokens for EACH suggested question
+        questions_with_estimates = []
+        for q in suggested_questions:
+            # Rough estimate based on schema size + prompt overhead
+            # Prompt overhead is ~1000 chars, schema is schema_str
+            est_input_tokens = (len(schema_str) + len(q) + 1200) // 4
+            questions_with_estimates.append({
+                "text": q,
+                "estimated_tokens": est_input_tokens
+            })
 
         source.domain_type = domain_type
-        await db.commit()
-
-        # Step 2: Run each question through the pipeline
-        results = await _run_questions(source, questions)
-
-        # Step 3: Save results
+        
+        # Step 3: Save metadata (questions only, results = [])
         source.auto_analysis_json = {
             "domain_type": domain_type,
-            "questions": questions,
-            "results": results,
+            "suggested_questions": questions_with_estimates,
+            "results": [],
         }
         source.auto_analysis_status = "done"
         await db.commit()
 
         logger.info(
-            "auto_analysis_done",
+            "auto_analysis_discovery_complete",
             source_id=source_id,
             domain_type=domain_type,
-            questions_run=len(questions),
+            suggestions=len(questions_with_estimates),
         )
 
     except Exception as exc:
@@ -121,11 +129,7 @@ async def run_auto_analysis(source_id: str, db: AsyncSession) -> None:
 
 async def _generate_questions(schema_str: str):
     """Use LLM to detect domain + generate 5 smart questions."""
-    llm = ChatGroq(
-        model_name="llama-3.3-70b-versatile",
-        groq_api_key=settings.GROCK_API_KEY,
-        temperature=0.3,
-    )
+    llm = get_llm(temperature=0.3)
 
     prompt = DISCOVERY_PROMPT.format(schema=schema_str)
     response = await llm.ainvoke(prompt)
@@ -170,7 +174,50 @@ async def _run_questions(
                 "retry_count": 0,
             }
 
-            final_state = await pipeline.ainvoke(initial_state)
+            # Use a unique thread_id for each auto-analysis question
+            thread_id = f"auto_{source.id}_{i}"
+            config = {"configurable": {"thread_id": thread_id}}
+            
+            final_state = await pipeline.ainvoke(initial_state, config)
+            
+            # ── ENHANCEMENT: Resume if Suspended ──
+            # If the graph hit an interrupt (like human_approval), we need to auto-approve 
+            # and continue for background auto-analysis.
+            max_continuations = 5
+            while max_continuations > 0:
+                current_state = await pipeline.aget_state(config)
+                if not current_state.next:
+                    break
+                
+                logger.debug(
+                    "auto_analysis_resuming",
+                    source_id=str(source.id),
+                    thread_id=thread_id,
+                    next=current_state.next
+                )
+                
+                # Auto-approve if we hit the approval node
+                if "human_approval" in current_state.next:
+                    await pipeline.aupdate_state(config, {"approval_granted": True}, as_node="human_approval")
+                
+                final_state = await pipeline.ainvoke(None, config)
+                max_continuations -= 1
+
+            logger.debug(
+                "auto_analysis_question_finished",
+                question=question,
+                keys=list(final_state.keys()),
+                has_summary=bool(final_state.get("executive_summary")),
+                has_insight=bool(final_state.get("insight_report")),
+                has_chart=bool(final_state.get("chart_json")),
+            )
+
+            # ── ENHANCEMENT: Persist Enriched Schema (ERD, etc.) ──
+            # The pipeline's discovery agent generates the Mermaid ERD and 
+            # captures foreign keys. We save this back to the source permanently.
+            if i == 0 and "schema_summary" in final_state:
+                source.schema_json = final_state["schema_summary"]
+                # No need to commit yet, the main loop commits at the end
 
             results.append({
                 "index": i,

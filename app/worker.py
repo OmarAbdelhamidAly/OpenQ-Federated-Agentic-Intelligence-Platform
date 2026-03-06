@@ -89,6 +89,9 @@ async def _execute_pipeline(job_id: str) -> dict:
             return {"error": "Data source not found"}
 
         # Build initial state
+        thread_id = str(job.id)
+        config = {"configurable": {"thread_id": thread_id}}
+        
         initial_state = {
             "tenant_id": str(job.tenant_id),
             "user_id": str(job.user_id),
@@ -107,14 +110,63 @@ async def _execute_pipeline(job_id: str) -> dict:
                 )).scalars().all()
             ],
             "retry_count": 0,
+            "history": [],
+            "thread_id": thread_id,
+            "approval_granted": False,
         }
 
         try:
             # Run the correct pipeline (CSV or SQL) based on source type
             pipeline = get_pipeline(source.type)
-            final_state = await pipeline.ainvoke(initial_state)
+            
+            # Use astream to capture node transitions
+            final_state = initial_state
+            job.thinking_steps = []
+            await db.commit()
 
-            # Save results
+            input_data = initial_state
+            if job.status == "running" and job.generated_sql:
+                input_data = None # Resuming from checkpointer
+
+            async for event in pipeline.astream(input_data, config, stream_mode="updates"):
+                # event is a dict where keys are node names and values are the state updates
+                for node_name, state_update in event.items():
+                    # Update final_state with local updates
+                    final_state.update(state_update)
+                    
+                    # Log the node execution
+                    current_steps = list(job.thinking_steps or [])
+                    step_entry = {
+                        "node": node_name,
+                        "status": "completed",
+                        "timestamp": datetime.now(timezone.utc).isoformat(),
+                    }
+                    
+                    # If the node provided its own intermediate steps (like ReAct), include those
+                    if "intermediate_steps" in state_update:
+                        step_entry["details"] = state_update["intermediate_steps"]
+                    
+                    current_steps.append(step_entry)
+                    job.thinking_steps = current_steps
+                    
+                    # Explicitly update status if we transitioned to a key node
+                    if node_name == "analysis_generator":
+                        job.status = "running"
+                    
+                    await db.commit()
+
+
+            # Check if we interrupted for approval
+            graph_state = await pipeline.aget_state(config)
+            if graph_state.next:
+                # We hit an interrupt (likely human_approval)
+                job.status = "awaiting_approval"
+                job.generated_sql = final_state.get("generated_sql")
+                job.intent = final_state.get("intent")
+                await db.commit()
+                return {"status": "awaiting_approval", "job_id": job_id}
+
+            # If we reached the end, save results
             analysis_result = AnalysisResult(
                 job_id=job.id,
                 chart_json=final_state.get("chart_json"),
@@ -124,6 +176,10 @@ async def _execute_pipeline(job_id: str) -> dict:
                 follow_up_suggestions=final_state.get("follow_up_suggestions"),
             )
             db.add(analysis_result)
+
+            # Persist enriched schema (ERD, etc.) back to the source
+            if "schema_summary" in final_state:
+                source.schema_json = final_state["schema_summary"]
 
             job.status = "done"
             job.intent = final_state.get("intent")

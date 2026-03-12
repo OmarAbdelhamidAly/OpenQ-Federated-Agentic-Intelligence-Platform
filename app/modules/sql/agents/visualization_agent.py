@@ -44,7 +44,7 @@ Sample data (first 10 rows): {data}"""
 
 async def visualization_agent(state: AnalysisState) -> Dict[str, Any]:
     """Generate a Plotly chart JSON from SQL analysis results."""
-    analysis = state.get("analysis_results")
+    analysis = state.get("analysis_results") or {}
     if not analysis or not analysis.get("data"):
         return {"chart_json": None}
 

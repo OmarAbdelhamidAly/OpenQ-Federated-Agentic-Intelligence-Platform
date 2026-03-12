@@ -17,12 +17,12 @@ from app.infrastructure.config import settings
 
 INSIGHT_PROMPT = """You are a senior data analyst writing insights for business stakeholders.
 
-Based on the analysis results, write:
+Based on the analysis results and supplemental knowledge base context, write:
 
 1. **insight_report**: A detailed analysis in plain English (3-5 paragraphs).
    - Always quantify findings: "23% drop" not just "dropped".
    - Reference specific data points.
-   - Explain the "why" behind the numbers when possible.
+   - **Hybrid Reasoning**: If Knowledge Base context is provided, cross-reference the numbers with the policies/guidelines found in the context.
 
 2. **executive_summary**: Max 3 sentences. Plain English. No jargon.
    - Lead with the headline finding.
@@ -37,12 +37,13 @@ Respond in JSON format:
 
 Question: {question}
 Intent: {intent}
+Knowledge Base Context: {kb_context}
 Data: {data}"""
 
 
 async def insight_agent(state: AnalysisState) -> Dict[str, Any]:
     """Generate written analysis and executive summary from SQL results."""
-    analysis = state.get("analysis_results")
+    analysis = state.get("analysis_results") or {}
     if not analysis:
         error_msg = state.get("error") or "No analysis data available."
         return {
@@ -53,8 +54,9 @@ async def insight_agent(state: AnalysisState) -> Dict[str, Any]:
     llm = get_llm(temperature=0.3)
 
     prompt = INSIGHT_PROMPT.format(
-        question=state.get("question", ""),
-        intent=state.get("intent", "comparison"),
+        question=state.get("question") or "",
+        intent=state.get("intent") or "comparison",
+        kb_context=analysis.get("kb_context") or "None provided.",
         data=json.dumps(analysis.get("data", [])[:20], indent=2, default=str),
     )
 

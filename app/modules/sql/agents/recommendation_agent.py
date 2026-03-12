@@ -54,9 +54,9 @@ async def recommendation_agent(state: AnalysisState) -> Dict[str, Any]:
     llm = get_llm(temperature=0.3)
 
     prompt = REC_PROMPT.format(
-        question=state.get("question", ""),
-        insight=state.get("insight_report", ""),
-        summary=state.get("executive_summary", ""),
+        question=state.get("question") or "",
+        insight=state.get("insight_report") or "",
+        summary=state.get("executive_summary") or "",
     )
 
     try:

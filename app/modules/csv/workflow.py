@@ -11,6 +11,9 @@ from typing import Any, Dict, Literal
 
 from langgraph.graph import END, StateGraph
 
+from langgraph.checkpoint.redis import AsyncRedisSaver
+import redis.asyncio as redis
+from app.infrastructure.config import settings
 from app.domain.analysis.entities import AnalysisState
 from app.modules.shared.agents.intake_agent import intake_agent
 from app.modules.shared.agents.output_assembler import output_assembler
@@ -118,7 +121,10 @@ def build_csv_graph() -> StateGraph:
     graph.add_edge("recommendation", "output_assembler")
     graph.add_edge("output_assembler", END)
 
-    return graph.compile()
+    # Enable memory (checkpointer) via Redis for persistence across containers
+    redis_client = redis.Redis.from_url(settings.REDIS_URL, decode_responses=False)
+    memory = AsyncRedisSaver(redis_client=redis_client)
+    return graph.compile(checkpointer=memory)
 
 
 # Module-level compiled graph (singleton)

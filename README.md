@@ -7,6 +7,15 @@ The platform transforms raw data into **Premium Glassmorphism Dashboards** using
 
 ---
 
+## 🎓 Project Context (NTI Final Project)
+This project serves as the final capstone for the **National Telecommunication Institute (NTI)** immersion program. It demonstrates advanced competency in building autonomous AI systems:
+
+- **Intensive Engineering**: Currently enrolled in a 420-hour intensive engineering program focused on multi-agent systems, RAG pipelines, and LLM orchestration.
+- **Production-Grade Orchestration**: Designing and deploying production-grade LangChain & LangGraph multi-agent systems with autonomous tool usage and persistent memory.
+- **Enterprise RAG Architectures**: Building enterprise RAG architectures using FAISS, Qdrant, and Weaviate with AWS-based deployment.
+
+---
+
 ## 🎨 The Premium Experience
 - **High-Resolution Visuals**: A custom-engineered CSS layer providing a dark, glassmorphic "Enterprise Command Center" aesthetic with neon accents and floating micro-animations.
 - **Micro-Animations**: Animated radial gradients, glowing sidebar states, and interactive stat cards designed to "WOW" stakeholders.

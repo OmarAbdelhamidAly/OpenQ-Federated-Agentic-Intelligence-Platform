@@ -62,8 +62,22 @@ def get_llm(temperature: float = 0, model: str | None = None) -> BaseChatModel:
             max_retries=0,
         )
 
+    def _make_ollama(m: str):
+        try:
+            from langchain_ollama import ChatOllama
+        except ImportError:
+            raise ImportError("langchain-ollama is not installed. Please add it to requirements.txt")
+        return ChatOllama(
+            model=m,
+            base_url=settings.OLLAMA_BASE_URL,
+            temperature=temperature,
+        )
+
     # 1. Determine Primary Model
-    if primary_model_name.startswith("gemini") or (settings.GEMINI_API_KEY and not primary_model_name.startswith("groq") and not primary_model_name.startswith("google/")):
+    if primary_model_name.startswith("ollama/"):
+        m_name = primary_model_name.replace("ollama/", "")
+        llm = _make_ollama(m_name)
+    elif primary_model_name.startswith("gemini") or (settings.GEMINI_API_KEY and not any(x in primary_model_name for x in ["groq", "google/", "ollama/"])):
         # e.g., gemini-1.5-pro
         llm = _make_gemini(primary_model_name)
     elif primary_model_name.startswith("groq/") or (settings.GROQ_API_KEY and not settings.OPENROUTER_API_KEY and not settings.GEMINI_API_KEY):

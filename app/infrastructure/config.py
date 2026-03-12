@@ -42,6 +42,7 @@ class Settings(BaseSettings):
     OPENROUTER_API_KEY: str = ""
     GROQ_API_KEY: str = ""
     GEMINI_API_KEY: str = ""
+    OLLAMA_BASE_URL: str = "http://localhost:11434"
     LLM_MODEL: str = "groq/llama-3.1-8b-instant"  # Default fallback, override via .env
 
 

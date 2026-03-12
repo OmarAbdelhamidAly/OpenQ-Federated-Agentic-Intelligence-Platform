@@ -9,7 +9,8 @@ Note: No data cleaning step — SQL databases manage their own data integrity.
 
 from __future__ import annotations
 
-from typing import Any, Dict, Literal
+import re
+from typing import Any, Dict, List, Literal, Union
 
 from langgraph.graph import END, StateGraph
 
@@ -24,7 +25,9 @@ from app.modules.sql.agents.recommendation_agent import recommendation_agent
 from app.modules.shared.agents.guardrail_agent import guardrail_agent
 
 
-from langgraph.checkpoint.memory import MemorySaver
+from langgraph.checkpoint.redis import AsyncRedisSaver
+import redis.asyncio as redis
+from app.infrastructure.config import settings
 
 # ── Conditional Edge Functions ─────────────────────────────────────────────────
 
@@ -71,7 +74,7 @@ async def sql_execution_node(state: AnalysisState) -> Dict[str, Any]:
         return {"error": "No SQL query found to execute."}
         
     try:
-        result = run_sql_query.invoke({
+        result = await run_sql_query.ainvoke({
             "connection_string": connection_string,
             "query": query,
             "params": params,
@@ -80,31 +83,111 @@ async def sql_execution_node(state: AnalysisState) -> Dict[str, Any]:
         
         row_count = result.get("row_count", 0)
         
-        # ── Self-Reflection Trigger ──
-        # If 0 rows are found and we haven't reached the reflection limit
+        # ── Self-Reflection Trigger (Idea 16) ──
+        # If 0 rows are found, check if we can provide a better hint
         reflection_count = state.get("reflection_count", 0)
         if row_count == 0 and reflection_count < 1:
+            hint = f"The query executed successfully but returned 0 rows."
+            
+            # Simple heuristic: Check if any WHERE clause value might have case issues
+            # We look at schema_summary for low_cardinality_values
+            schema = state.get("schema_summary", {})
+            if schema:
+                # Extract potential literals from SQL (very basic heuristic)
+                literals = re.findall(r"=\s*'(.*?)'", query)
+                for lit in literals:
+                    for table in schema.get("tables", []):
+                        for col in table.get("columns", []):
+                            enums = col.get("low_cardinality_values", [])
+                            if any(e.lower() == lit.lower() and e != lit for e in enums):
+                                matching_enum = next(e for e in enums if e.lower() == lit.lower())
+                                hint += f" Hint: You filtered by '{lit}', but sampled data for '{table['table']}.{col['name']}' shows values like '{matching_enum}'. SQL is case-sensitive for string comparisons."
+            
             return {
                 "analysis_results": {
-                    **state.get("analysis_results", {}),
+                    **(state.get("analysis_results") or {}),
                     **result,
                 },
-                "reflection_context": f"The query '{query}' executed successfully but returned 0 rows. This might be due to a strict filter (e.g. date group that doesn't exist) or search term case-sensitivity. Please try to broaden the query or check the distribution of data in relevant columns.",
+                "reflection_context": hint,
                 "reflection_count": reflection_count + 1,
                 "error": None
             }
 
         return {
             "analysis_results": {
-                **state.get("analysis_results", {}),
+                **(state.get("analysis_results") or {}),
                 **result,
                 "reflection_count": state.get("reflection_count", 0)
             },
-            "reflection_context": None, # Clear reflection context if rows found
+            "reflection_context": None,
             "error": None
         }
     except Exception as e:
         return {"error": str(e)}
+
+
+async def backtrack_node(state: AnalysisState) -> Dict[str, Any]:
+    """Analyzes failure and suggests a strategic pivot to the generator (Idea 11)."""
+    retry_count = state.get("retry_count", 0)
+    error = state.get("error") or state.get("policy_violation")
+    
+    # Heuristic: If we've retried and still fail, suggest a simplified schema
+    hint = f"\n[BACKTRACK] Previous attempt failed with: {error}. "
+    if "violation" in str(error).lower():
+        hint += "Try a less sensitive query or explain why this data is needed."
+    else:
+        hint += "Try simplifying the JOIN logic or checking column names using the tool again."
+        
+    return {
+        "retry_count": retry_count + 1,
+        "reflection_context": (state.get("reflection_context") or "") + hint,
+        "error": None,
+        "policy_violation": None
+    }
+
+
+async def verifier_node(state: AnalysisState) -> Dict[str, Any]:
+    """Wraps the Verifier Agent specifically for the LangGraph workflow (Idea 9)."""
+    from app.modules.sql.agents.verifier_agent import verifier_agent
+    return await verifier_agent(state)
+
+
+async def memory_persistence_node(state: AnalysisState) -> Dict[str, Any]:
+    """Saves successful analyses to long-term memory (Idea 16)."""
+    from app.modules.sql.utils.insight_memory import insight_memory
+    
+    analysis = state.get("analysis_results", {})
+    insight = state.get("insight_report", "")
+    question = state.get("question", "")
+    
+    if insight and analysis.get("plan"):
+        insight_memory.save_analysis(
+            question=question,
+            sql=analysis["plan"].get("query"),
+            insight=insight
+        )
+    return {}
+
+
+async def hybrid_fusion_node(state: AnalysisState) -> Dict[str, Any]:
+    """Retrieves unstructured KB context related to the SQL results (Idea 13)."""
+    from app.modules.shared.utils.retrieval import get_kb_context
+    
+    question = state.get("question", "")
+    kb_id = state.get("kb_id")
+    sql_results = state.get("analysis_results", {}).get("data", [])
+    
+    # 1. Fetch context based on original question
+    kb_context = await get_kb_context(kb_id, question)
+    
+    # 2. Logic to refine search based on SQL results could go here
+    # For now, we just pass the KB context forward
+    return {
+        "analysis_results": {
+            **(state.get("analysis_results") or {}),
+            "kb_context": kb_context
+        }
+    }
 
 
 # ── Build the Graph ────────────────────────────────────────────────────────────
@@ -120,10 +203,14 @@ def build_sql_graph() -> StateGraph:
     graph.add_node("analysis_generator", analysis_agent) # ReAct phase
     graph.add_node("human_approval", human_approval_node)
     graph.add_node("guardrail", guardrail_agent)
+    graph.add_node("backtrack", backtrack_node) # Idea 11
     graph.add_node("execution", sql_execution_node)
+    graph.add_node("hybrid_fusion", hybrid_fusion_node) # Idea 13
     graph.add_node("visualization", visualization_agent)
     graph.add_node("insight", insight_agent)
+    graph.add_node("verifier", verifier_node) # Idea 9
     graph.add_node("recommendation", recommendation_agent)
+    graph.add_node("memory_persistence", memory_persistence_node) # Idea 16
     graph.add_node("output_assembler", output_assembler)
 
     # 1. True Parallel Start: Both trigger on START
@@ -150,7 +237,7 @@ def build_sql_graph() -> StateGraph:
     # 3. Analysis (ReAct) -> Approval Pause OR Fast-track for auto-analysis
     def route_after_generator(state: AnalysisState) -> Literal["human_approval", "guardrail"]:
         # Auto-analysis runs in the background, no human to approve
-        if state.get("user_id") == "auto_analysis":
+        if state.get("user_id") == "auto_analysis" or state.get("approval_granted"):
             return "guardrail"
         return "human_approval"
 
@@ -175,34 +262,47 @@ def build_sql_graph() -> StateGraph:
         "guardrail",
         route_post_guardrail,
         {
-            "retry": "analysis_generator",
+            "retry": "backtrack",
             "execute": "execution",
         },
     )
 
-    # 5. Execution -> Reflection OR Visualization
-    def route_after_execution(state: AnalysisState) -> Literal["reflection", "visualization"]:
+    # 5. Execution -> Reflection OR Visualization + Fusion
+    def route_after_execution(state: AnalysisState) -> Union[str, List[str]]:
         if state.get("reflection_context"):
-            return "reflection"
-        return "visualization"
+            return "backtrack"
+        return ["visualization", "hybrid_fusion"]
 
     graph.add_conditional_edges(
         "execution",
         route_after_execution,
         {
-            "reflection": "analysis_generator",
+            "backtrack": "backtrack",
             "visualization": "visualization",
+            "hybrid_fusion": "hybrid_fusion",
         }
     )
 
-    # 6. Visualization -> Output chain
+    # 6. Parallel Join at Insight
+    graph.add_edge("backtrack", "analysis_generator")
     graph.add_edge("visualization", "insight")
-    graph.add_edge("insight", "recommendation")
-    graph.add_edge("recommendation", "output_assembler")
+    graph.add_edge("hybrid_fusion", "insight")
+    
+    # 7. Quality Control Chain (Idea 9 & 16)
+    graph.add_edge("insight", "verifier")
+    
+    def route_after_verifier(state: AnalysisState) -> Union[str, List[str]]:
+        # For now, always proceed to recommendation, but save to memory if verified
+        return "recommendation"
+
+    graph.add_edge("verifier", "recommendation")
+    graph.add_edge("recommendation", "memory_persistence")
+    graph.add_edge("memory_persistence", "output_assembler")
     graph.add_edge("output_assembler", END)
 
-    # Enable memory (checkpointer)
-    memory = MemorySaver()
+    # Enable memory (checkpointer) via Redis for persistence across containers
+    redis_client = redis.Redis.from_url(settings.REDIS_URL, decode_responses=False)
+    memory = AsyncRedisSaver(redis_client=redis_client)
     # Interrupt at human_approval to show generated_sql to user
     return graph.compile(checkpointer=memory, interrupt_before=["human_approval"])
 

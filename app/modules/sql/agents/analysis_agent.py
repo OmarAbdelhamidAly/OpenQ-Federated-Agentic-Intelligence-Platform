@@ -18,7 +18,11 @@ from app.infrastructure.config import settings
 from app.modules.shared.tools.load_data_source import get_connection_string
 from app.modules.shared.utils.retrieval import get_kb_context
 from app.modules.sql.utils.sql_validator import SQLValidator
-from app.modules.sql.tools.run_sql_query import get_engine
+from app.modules.sql.tools.run_sql_query import get_async_engine
+from app.modules.sql.utils.golden_sql import golden_sql_manager
+from app.modules.sql.utils.schema_selector import schema_selector
+from app.modules.sql.utils.schema_mapper import schema_mapper
+from app.modules.sql.utils.insight_memory import insight_memory
 
 # ── Prompt ────────────────────────────────────────────────────────────────────
 
@@ -67,7 +71,7 @@ REACT_SYSTEM_PROMPT = """You are a SQL expert tasked with generating a high-qual
 You have access to a SQL execution tool to verify column names, schema details, or sample data.
 
 PROCESS:
-1. Review the Schema and Business Metrics.
+1. Review the Schema, Business Metrics, and reference "Golden SQL" examples.
 2. If you are unsure about a column or join, CALL the `run_sql_query` tool with a LIMIT 5 to test your assumptions.
 3. Iterate based on tool results.
 4. When you have the final, correct query, respond with a JSON block containing "query" and "params".
@@ -80,6 +84,9 @@ RULES:
 
 Current Business Metrics: {metrics}
 Knowledge Base Context: {kb_context}
+
+GOLDEN SQL EXAMPLES (References):
+{golden_examples}
 
 VALIDATION FEEDBACK:
 If the `run_sql_query` tool or the validator returns errors, you MUST fix them in the next turn.
@@ -99,9 +106,17 @@ async def analysis_agent(state: AnalysisState) -> Dict[str, Any]:
     metrics_str = json.dumps(state.get("business_metrics", []), indent=2)
     kb_context = await get_kb_context(state.get("kb_id"), state["question"])
     
+    # Fetch Golden SQL examples (Idea 8)
+    goldens = golden_sql_manager.get_similar_examples(state["question"])
+    golden_str = "\n".join([f"Q: {ex['question']}\nSQL: {ex['sql']}" for ex in goldens]) if goldens else "No relevant examples found."
+
     # Base messages
     messages = [
-        SystemMessage(content=REACT_SYSTEM_PROMPT.format(metrics=metrics_str, kb_context=kb_context or "None")),
+        SystemMessage(content=REACT_SYSTEM_PROMPT.format(
+            metrics=metrics_str, 
+            kb_context=kb_context or "None",
+            golden_examples=golden_str
+        )),
     ]
 
     # Add History if present
@@ -127,8 +142,26 @@ async def analysis_agent(state: AnalysisState) -> Dict[str, Any]:
         error_hint += f"\n[USER FEEDBACK] The user requested a refinement: {state['user_feedback']}"
 
     # Current Request
-    compact_schema = _format_compact_schema(state.get('schema_summary', {}))
-    messages.append(HumanMessage(content=f"Question: {state['question']}\nSchema:\n{compact_schema}\n{error_hint}"))
+    full_schema = state.get('schema_summary', {})
+    relevant_schema = schema_selector.select_tables(full_schema, state["question"])
+    
+    # Apply business metadata (Idea 15)
+    mapped_schema = schema_mapper.map_schema(relevant_schema)
+    compact_schema = _format_compact_schema(mapped_schema)
+    
+    # Retrieve historical context (Idea 16)
+    past_insights = insight_memory.get_related_insights(state["question"])
+    history_str = ""
+    if past_insights:
+        history_str = "\nRelevant Past Analyses:\n" + "\n".join([f"- Q: {i['question']} -> SQL: {i['sql']}" for i in past_insights])
+
+    # Validation Warnings (Idea 7)
+    perf_hint = ""
+    validation_results = state.get("validation_results")
+    if validation_results and validation_results.get("warnings"):
+        perf_hint = "\nOptimization Warning: " + "; ".join(validation_results["warnings"])
+
+    messages.append(HumanMessage(content=f"Question: {state['question']}\n{history_str}\nSchema:\n{compact_schema}\n{error_hint}{perf_hint}"))
 
     # Simple manual ReAct loop (max 3 turns)
     generated_sql = None
@@ -169,7 +202,7 @@ async def analysis_agent(state: AnalysisState) -> Dict[str, Any]:
                 args["limit"] = 5
                 steps.append({"role": "tool_call", "tool": "run_sql_query", "args": args})
                 try:
-                    tool_output = run_sql_query.invoke(args)
+                    tool_output = await run_sql_query.ainvoke(args)
                     steps.append({"role": "tool_result", "content": "Query executed successfully."})
                     messages.append(ToolMessage(content=json.dumps(tool_output), tool_call_id=tool_call["id"]))
                 except Exception as e:
@@ -182,14 +215,14 @@ async def analysis_agent(state: AnalysisState) -> Dict[str, Any]:
     # ── Final Validation Check ──
     # One last verification using the 3-layer validator before exiting.
     connection_string = get_connection_string(state)
-    engine = get_engine(connection_string) if connection_string else None
+    engine = get_async_engine(connection_string) if connection_string else None
     validator = SQLValidator(engine, state.get("schema_summary"))
     
-    validation = validator.validate(generated_sql)
+    validation = await validator.validate(generated_sql)
     if not validation["valid"]:
         # If the final query is STILL invalid, return the error to trigger a Graph retry
         return {
-            "error": f"Post-generation validation failed: {', '.join(validation['errors'])}",
+            "error": f"Post-generation validation failed: {'; '.join(validation['errors'])}",
             "intermediate_steps": steps,
             "validation_results": validation
         }
@@ -248,9 +281,11 @@ def _format_compact_schema(schema_summary: Dict[str, Any]) -> str:
         lines.append("")
         
     # 2. Tables & Columns (High-Density)
-    lines.append("Definition (table: col(type) [eg: sample]):")
+    lines.append("Definition (table: col(type) [eg: sample] {desc}):")
     for t in schema_summary.get("tables", []):
         col_parts = []
+        t_desc = f" {{{t['description']}}}" if t.get("description") else ""
+        
         for c in t.get("columns", []):
             # Use shorthand: * for PK, type in parens
             label = f"{c['name']}({c['dtype']})"
@@ -263,9 +298,13 @@ def _format_compact_schema(schema_summary: Dict[str, Any]) -> str:
                 s = str(samples[0])[:12] # Keep it very short
                 label += f"[{s}]"
             
+            # Add business description (Idea 15)
+            if c.get("description"):
+                label += f" <{c['description']}>"
+            
             col_parts.append(label)
         
-        lines.append(f"- {t['table']}: {', '.join(col_parts)}")
+        lines.append(f"- {t['table']}{t_desc}: {', '.join(col_parts)}")
         
     return "\n".join(lines)
 

@@ -25,7 +25,7 @@ services:
 
   # ── Redis ──────────────────────────────────────────────────
   redis:
-    image: redis:7-alpine
+    image: redis/redis-stack-server:latest
     container_name: analyst-redis
     restart: unless-stopped
     ports:
@@ -50,6 +50,22 @@ services:
       - qdrantdata:/qdrant/storage
     # Note: Official Qdrant image is minimal and lacks curl/wget. 
     # We rely on 'service_started' condition below.
+
+    # ── Ollama (Local LLM) ──────────────────────────────────────
+  ollama:
+    image: ollama/ollama:latest
+    container_name: analyst-ollama
+    restart: unless-stopped
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollamadata:/root/.ollama
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:11434"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
 
     # ── FastAPI Application ────────────────────────────────────
   api:
@@ -77,7 +93,8 @@ services:
       AES_KEY: ${AES_KEY:-Y2hhbmdlLW1lLXRvLWEtcmFuZG9tLTMyLWJ5dGVz}
       CORS_ORIGINS: ${CORS_ORIGINS:-'["http://localhost:3000","http://localhost:8000"]'}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
-      LLM_MODEL: ${LLM_MODEL}
+      LLM_MODEL: ollama/llama3.1
+      OLLAMA_BASE_URL: http://ollama:11434
 
     volumes:
       - tenant_uploads:/tmp/tenants
@@ -119,7 +136,8 @@ services:
       AES_KEY: ${AES_KEY:-Y2hhbmdlLW1lLXRvLWEtcmFuZG9tLTMyLWJ5dGVz}
       CORS_ORIGINS: ${CORS_ORIGINS:-'["http://localhost:3000","http://localhost:8000"]'}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
-      LLM_MODEL: ${LLM_MODEL}
+      LLM_MODEL: ollama/llama3.1
+      OLLAMA_BASE_URL: http://ollama:11434
 
     volumes:
       - tenant_uploads:/tmp/tenants
@@ -146,4 +164,6 @@ volumes:
   qdrantdata:
     driver: local
   tenant_uploads:
+    driver: local
+  ollamadata:
     driver: local

@@ -26,3 +26,8 @@ __pycache__/
 *.xlsx
 *.sqlite
 tenant_data/
+
+# Cache and temporary files
+.cache/
+.pytest_cache/
+*.log

@@ -119,6 +119,10 @@ async def _execute_pipeline(job_id: str) -> dict:
             # Run the correct pipeline (CSV or SQL) based on source type
             pipeline = get_pipeline(source.type)
             
+            # Setup Redis checkpointer indices if they don't exist
+            if hasattr(pipeline.checkpointer, "setup"):
+                await pipeline.checkpointer.setup()
+            
             # Use astream to capture node transitions
             final_state = initial_state
             job.thinking_steps = []
@@ -189,6 +193,9 @@ async def _execute_pipeline(job_id: str) -> dict:
             return {"status": "done", "job_id": job_id}
 
         except Exception as e:
+            import structlog
+            logger = structlog.get_logger("app.worker")
+            logger.error("pipeline_error", error=str(e), job_id=job_id, exc_info=True)
             job.status = "error"
             job.error_message = str(e)
             job.completed_at = datetime.now(timezone.utc)

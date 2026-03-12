@@ -74,6 +74,31 @@ def resolve_data_path(state: Dict[str, Any]) -> Optional[str]:
     return state.get("clean_dataframe_ref") or state.get("file_path")
 
 
+def ensure_async_connection_string(conn_str: str) -> str:
+    """Ensure the connection string uses an async-compatible driver.
+    
+    Translates:
+    - postgresql:// or postgresql+psycopg2:// -> postgresql+asyncpg://
+    - mysql:// or mysql+pymysql:// -> mysql+aiomysql://
+    - sqlite:/// -> sqlite+aiosqlite:///
+    """
+    if not conn_str:
+        return conn_str
+        
+    if conn_str.startswith("postgresql://") or conn_str.startswith("postgres://"):
+        return conn_str.replace("postgresql://", "postgresql+asyncpg://").replace("postgres://", "postgresql+asyncpg://")
+    elif conn_str.startswith("postgresql+psycopg2://"):
+        return conn_str.replace("postgresql+psycopg2://", "postgresql+asyncpg://")
+    elif conn_str.startswith("mysql://"):
+        return conn_str.replace("mysql://", "mysql+aiomysql://")
+    elif conn_str.startswith("mysql+pymysql://"):
+        return conn_str.replace("mysql+pymysql://", "mysql+aiomysql://")
+    elif conn_str.startswith("sqlite:///"):
+        return conn_str.replace("sqlite:///", "sqlite+aiosqlite:///")
+    
+    return conn_str
+
+
 def get_connection_string(state: Dict[str, Any]) -> Optional[str]:
     """Decrypt SQL config from state and return a SQLAlchemy connection string.
 
@@ -87,6 +112,10 @@ def get_connection_string(state: Dict[str, Any]) -> Optional[str]:
     """
     config_encrypted = state.get("config_encrypted")
     file_path = state.get("file_path")
+    
+    # Fallback for manual/test strings
+    if state.get("connection_string"):
+        return state["connection_string"]
 
     # Case 1: Uploaded SQLite database file (no credentials to decrypt)
     if not config_encrypted and file_path:

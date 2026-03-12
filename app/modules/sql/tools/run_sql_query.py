@@ -1,8 +1,3 @@
-"""Tool: Run SELECT-only SQL query via SQLAlchemy parameterized queries.
-
-SQL Pipeline — executes queries against relational databases.
-"""
-
 from __future__ import annotations
 
 import re
@@ -10,9 +5,11 @@ from typing import Any, Dict, List, Optional
 
 from langchain_core.tools import ToolException, tool
 from pydantic import BaseModel, Field
-from sqlalchemy import create_engine, text
+from sqlalchemy.ext.asyncio import create_async_engine, AsyncEngine
+from sqlalchemy import text
 
 from app.infrastructure.sql_guard import validate_select_only
+from app.modules.shared.tools.load_data_source import ensure_async_connection_string
 
 
 class SQLQueryInput(BaseModel):
@@ -27,30 +24,35 @@ class SQLQueryInput(BaseModel):
 
 # ── Shared Connection Pooling & Caching ─────────────────────────────────────────
 
-_ENGINES: Dict[str, Any] = {}
+_ENGINES: Dict[str, AsyncEngine] = {}
 _RESULT_CACHE: Dict[tuple, Dict[str, Any]] = {}
 
-def get_engine(connection_string: str):
-    """Return a cached SQLAlchemy engine or create a new one."""
-    if connection_string not in _ENGINES:
-        _ENGINES[connection_string] = create_engine(
-            connection_string,
-            pool_size=5,
-            max_overflow=10,
-            pool_timeout=30,
-            pool_pre_ping=True
-        )
-    return _ENGINES[connection_string]
+
+def get_async_engine(connection_string: str) -> AsyncEngine:
+    """Return a cached SQLAlchemy async engine or create a new one."""
+    async_conn_str = ensure_async_connection_string(connection_string)
+    if async_conn_str not in _ENGINES:
+        # SQLite does not support pool_size or max_overflow
+        if async_conn_str.startswith("sqlite"):
+            _ENGINES[async_conn_str] = create_async_engine(async_conn_str)
+        else:
+            _ENGINES[async_conn_str] = create_async_engine(
+                async_conn_str,
+                pool_size=5,
+                max_overflow=10,
+                pool_timeout=30,
+                pool_pre_ping=True
+            )
+    return _ENGINES[async_conn_str]
 
 
-@tool("run_sql_query", args_schema=SQLQueryInput)
-def run_sql_query(
+async def _run_sql_query_internal(
     connection_string: str,
     query: str,
     params: Optional[Dict[str, Any]] = None,
     limit: int = 1000,
 ) -> Dict[str, Any]:
-    """Execute a SELECT-only SQL query via SQLAlchemy with pooling and caching."""
+    """Execute a SELECT-only SQL query asynchronously with pooling and caching."""
     # 1. Validation & Cleaning
     clean_query = query.strip().rstrip(";")
     try:
@@ -62,7 +64,6 @@ def run_sql_query(
         clean_query += f" LIMIT {limit}"
 
     # 2. Result Caching Check
-    # Key = (conn_str, query, sorted_params)
     cache_key = (
         connection_string,
         clean_query,
@@ -71,23 +72,30 @@ def run_sql_query(
     if cache_key in _RESULT_CACHE:
         return _RESULT_CACHE[cache_key]
 
-    # 3. Execution with Shared Pool
-    engine = get_engine(connection_string)
+    # 3. Execution with Shared Async Pool
+    engine = get_async_engine(connection_string)
     try:
-        with engine.connect() as conn:
-            result = conn.execute(text(clean_query), params or {})
-            rows = result.fetchall()
+        async with engine.connect() as conn:
+            # Idea 4: Stream results for memory efficiency
+            result = await conn.stream(text(clean_query), params or {})
+            
+            data: List[Dict[str, Any]] = []
             columns = list(result.keys())
-
-            data: List[Dict[str, Any]] = [
-                {col: val for col, val in zip(columns, row)}
-                for row in rows
-            ]
+            
+            count = 0
+            async for row in result:
+                if count >= limit:
+                    break
+                
+                # Zip columns and row values
+                data.append({col: val for col, val in zip(columns, row)})
+                count += 1
 
             output = {
                 "data": data,
                 "columns": columns,
                 "row_count": len(data),
+                "truncated": count >= limit, # Flag for the agent (Idea 4)
                 "cached": False
             }
             
@@ -99,4 +107,15 @@ def run_sql_query(
             return output
             
     except Exception as e:
-        raise ToolException(f"SQL execution error: {e}")
+        raise ToolException(f"Async SQL execution error: {e}")
+
+
+@tool("run_sql_query", args_schema=SQLQueryInput)
+async def run_sql_query(
+    connection_string: str,
+    query: str,
+    params: Optional[Dict[str, Any]] = None,
+    limit: int = 1000,
+) -> Dict[str, Any]:
+    """Execute a SELECT-only SQL query asynchronously with pooling and caching."""
+    return await _run_sql_query_internal(connection_string, query, params, limit)

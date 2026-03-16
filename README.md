@@ -81,25 +81,24 @@ The platform is built as a **4-layer microservices stack** orchestrated by Docke
 │  Routes to appropriate pillar or requests clarification                 │
 └──────────────────────────────────┬──────────────────────────────────────┘
                                    │ Celery tasks by type
-         ┌─────────────────────────┼──────────────────────────┐
-         ▼                         ▼                          ▼
-┌─────────────────┐   ┌─────────────────┐   ┌─────────────────────────┐
-│  LAYER 3        │   │  LAYER 3        │   │  LAYER 3                │
-│  worker-sql     │   │  worker-csv     │   │  worker-json            │
-│  worker-pdf     │   │                 │   │                         │
-│                 │   │ LangGraph CSV   │   │ LangGraph JSON          │
-│ LangGraph SQL   │   │ Pipeline:       │   │ Pipeline                │
-│ Pipeline:       │   │ discovery →     │   │                         │
-│ discovery →     │   │ [clean?] →      │   └─────────────────────────┘
-│ generator →     │   │ analysis →      │
-│ [HITL pause] →  │   │ visualization → │
-│ execution →     │   │ insight →       │
-│ [reflect?] →    │   │ recommendation  │
-│ fusion →        │   │                 │
-│ insight →       │   └─────────────────┘
-│ verifier →      │
-│ recommendation  │
-└─────────────────┘
+      ┌──────────────────┬──────────────────┬──────────────────┐
+      ▼                  ▼                  ▼                  ▼
+┌───────────────┐ ┌───────────────┐ ┌───────────────┐ ┌───────────────┐
+│  LAYER 3      │ │  LAYER 3      │ │  LAYER 3      │ │  LAYER 3      │
+│  worker-sql   │ │  worker-csv   │ │  worker-json  │ │  worker-pdf   │
+│               │ │               │ │               │ │               │
+│ LangGraph SQL │ │ LangGraph CSV │ │ LangGraph     │ │ ColPali RAG   │
+│ Pipeline:     │ │ Pipeline:     │ │ JSON Pipeline │ │ Pipeline:     │
+│ discovery →   │ │ discovery →   │ │               │ │ ingest →      │
+│ generator →   │ │ [clean?] →    │ └───────────────┘ │ embed →       │
+│ [HITL pause]→ │ │ analysis →    │                   │ retrieve →    │
+│ execution →   │ │ visualization→│                   │ synthesize    │
+│ [reflect?] →  │ │ insight →     │                   └───────────────┘
+│ fusion →      │ │ recommendation│
+│ insight →     │ └───────────────┘
+│ verifier →    │
+│ recommendation│
+└───────────────┘
          │
          ▼
 ┌─────────────────────────────────────────────────────────────────────────┐

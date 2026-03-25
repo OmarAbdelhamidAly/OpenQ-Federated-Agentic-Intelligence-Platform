@@ -279,52 +279,51 @@ export default function PortalDashboard({ type, onSelectSource }: PortalDashboar
                     <option disabled value="Select Type">Select Type</option>
                     {TAXONOMY[uploadCategory]?.types.map(t => <option key={t.slug} value={t.slug}>{t.label}</option>)}
                   </select>
+
+                  <div className="flex flex-col justify-center items-end mr-4">
+                    <span className="text-[8px] font-black text-slate-600 uppercase tracking-widest mb-1">Upload Mode</span>
+                    <div className="flex bg-black/40 border border-slate-700/50 rounded-lg p-0.5 mt-0.5 relative group">
+                      <div 
+                        className="absolute top-0.5 bottom-0.5 w-[calc(33.33%-1px)] bg-[var(--primary)] rounded-md transition-all duration-300 shadow-md pointer-events-none"
+                        style={{
+                          left: indexingMode === 'deep_vision' ? '2px' : indexingMode === 'hybrid_ocr' ? 'calc(33.33% + 1px)' : 'calc(66.66% - 2px)'
+                        }}
+                      />
+                      
+                      <button
+                        type="button"
+                        onClick={() => setIndexingMode('deep_vision')}
+                        className={`relative z-10 px-3 py-1 text-[10px] font-black uppercase tracking-widest rounded-md transition-all w-full text-center ${
+                          indexingMode === 'deep_vision' ? 'text-white' : 'text-slate-500 hover:text-slate-300'
+                        }`}
+                        title="Uses ColPali Vision-Language Model. Accurately reads charts, graphs, and images. Slow indexing."
+                      >
+                        Deep Vision
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setIndexingMode('hybrid_ocr')}
+                        className={`relative z-10 px-3 py-1 text-[10px] font-black uppercase tracking-widest rounded-md transition-all flex-1 text-center ${
+                          indexingMode === 'hybrid_ocr' ? 'text-white' : 'text-slate-500 hover:text-slate-300'
+                        }`}
+                        title="Segmenter + Selective OCR. Best of both worlds. Balances quality and speed."
+                      >
+                        Hybrid OCR
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setIndexingMode('fast_text')}
+                        className={`relative z-10 px-3 py-1 text-[10px] font-black uppercase tracking-widest rounded-md transition-all w-full text-center ${
+                          indexingMode === 'fast_text' ? 'text-white' : 'text-slate-500 hover:text-slate-300'
+                        }`}
+                        title="Uses FastEmbed & text chunking. Ignores images/charts. Sub-second indexing."
+                      >
+                        Fast Text
+                      </button>
+                    </div>
+                  </div>
                 </>
               )}
-
-              <div className="flex flex-col justify-center items-end mr-4">
-                 <span className="text-[8px] font-black text-slate-600 uppercase tracking-widest mb-1">Upload Mode</span>
-                 <div className="flex bg-black/40 border border-slate-700/50 rounded-lg p-0.5 mt-0.5 relative group">
-                   {/* Background highlight pill */}
-                   <div 
-                     className="absolute top-0.5 bottom-0.5 w-[calc(33.33%-1px)] bg-[var(--primary)] rounded-md transition-all duration-300 shadow-md pointer-events-none"
-                     style={{
-                       left: indexingMode === 'deep_vision' ? '2px' : indexingMode === 'hybrid_ocr' ? 'calc(33.33% + 1px)' : 'calc(66.66% - 2px)'
-                     }}
-                   />
-                   
-                   <button
-                     type="button"
-                     onClick={() => setIndexingMode('deep_vision')}
-                     className={`relative z-10 px-3 py-1 text-[10px] font-black uppercase tracking-widest rounded-md transition-all w-full text-center ${
-                       indexingMode === 'deep_vision' ? 'text-white' : 'text-slate-500 hover:text-slate-300'
-                     }`}
-                     title="Uses ColPali Vision-Language Model. Accurately reads charts, graphs, and images. Slow indexing."
-                   >
-                     Deep Vision
-                   </button>
-                   <button
-                     type="button"
-                     onClick={() => setIndexingMode('hybrid_ocr')}
-                     className={`relative z-10 px-3 py-1 text-[10px] font-black uppercase tracking-widest rounded-md transition-all flex-1 text-center ${
-                       indexingMode === 'hybrid_ocr' ? 'text-white' : 'text-slate-500 hover:text-slate-300'
-                     }`}
-                     title="Segmenter + Selective OCR. Best of both worlds. Balances quality and speed."
-                   >
-                     Hybrid OCR
-                   </button>
-                   <button
-                     type="button"
-                     onClick={() => setIndexingMode('fast_text')}
-                     className={`relative z-10 px-3 py-1 text-[10px] font-black uppercase tracking-widest rounded-md transition-all w-full text-center ${
-                       indexingMode === 'fast_text' ? 'text-white' : 'text-slate-500 hover:text-slate-300'
-                     }`}
-                     title="Uses FastEmbed & text chunking. Ignores images/charts. Sub-second indexing."
-                   >
-                     Fast Text
-                   </button>
-                 </div>
-              </div>
 
               {type === 'pdf' ? (
                 <button

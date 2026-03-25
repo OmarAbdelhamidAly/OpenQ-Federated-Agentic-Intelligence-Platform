@@ -48,6 +48,12 @@ class AnalysisState(TypedDict, total=False):
     system_policies: Optional[List[Dict[str, str]]]  # List of {name, type, description}
     policy_violation: Optional[str]  # Error message if a guardrail is triggered
 
+    # ── Vision 2026: Multi-Agentic Orchestration ───────────────
+    required_pillars: Optional[List[str]]  # e.g. ["sql", "pdf"]
+    multi_source_ids: Optional[List[str]]
+    synthesis_report: Optional[str]
+    selected_sources: Optional[List[Dict[str, Any]]] # [{id, type, name, schema}]
+
     # ── Intake Agent Output ───────────────────────────────────
     intent: str                  # trend | comparison | ranking | correlation | anomaly
     relevant_columns: List[str]

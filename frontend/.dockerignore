@@ -1,0 +1,8 @@
+node_modules
+# dist (Allowing for Offline-First build)
+# dist
+.vscode
+.git
+.gitignore
+package-lock.json
+*.md

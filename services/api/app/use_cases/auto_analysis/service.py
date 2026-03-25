@@ -85,26 +85,36 @@ async def run_auto_analysis(source_id: str, user_id: str, db: AsyncSession) -> N
     await db.commit()
 
     try:
-        # Step 2: NEW - Generate domain + questions from schema
-        # Compact JSON (no whitespace) saves ~40% tokens for large schemas
-        schema_str = json.dumps(source.schema_json or {}, separators=(',', ':'))
-        # Hard cap at 3500 chars to stay within Ollama's 4096-token context window
-        # (prompt template overhead ~600 chars + response tokens)
-        MAX_SCHEMA_CHARS = 3000
-        if len(schema_str) > MAX_SCHEMA_CHARS:
-            schema_str = schema_str[:MAX_SCHEMA_CHARS] + "... [schema truncated]"
-        domain_type, suggested_questions = await _generate_questions(schema_str)
-
-        # Estimate tokens for EACH suggested question
-        questions_with_estimates = []
-        for q in suggested_questions:
-            # Rough estimate based on schema size + prompt overhead
-            # Prompt overhead is ~1000 chars, schema is schema_str
-            est_input_tokens = (len(schema_str) + len(q) + 1200) // 4
-            questions_with_estimates.append({
-                "text": q,
-                "estimated_tokens": est_input_tokens
-            })
+        if source.type == "pdf":
+            # For PDF, the 'schema' is actually doc metadata (doc_type, industry, etc.)
+            metadata = (source.schema_json or {}).get("metadata") or {}
+            doc_type = metadata.get("doc_type", "Document")
+            industry = metadata.get("industry", "General")
+            hint = source.context_hint or "none"
+            
+            schema_str = f"Type: {doc_type}, Industry: {industry}, User Hint: {hint}"
+            
+            # Use a specialized prompt for PDF discovery
+            PDF_DISCOVERY_PROMPT = """You are a senior document analyst. Given the following document metadata, generate exactly 5 smart, diverse questions that a business user would ask to extract value from this document via visual analysis.
+            
+            Document Info: {schema}
+            
+            Rules:
+            - Questions should be diverse (summary, specific data extraction, trend, comparison, risk/compliance).
+            - Respond ONLY with valid JSON:
+            {{
+              "domain_type": "document",
+              "questions": ["...", "...", "...", "...", "..."]
+            }}"""
+            
+            domain_type, suggested_questions = await _generate_questions(schema_str, prompt_template=PDF_DISCOVERY_PROMPT)
+        else:
+            # Step 2: Generate domain + questions from schema (CSV/SQL)
+            schema_str = json.dumps(source.schema_json or {}, separators=(',', ':'))
+            MAX_SCHEMA_CHARS = 3000
+            if len(schema_str) > MAX_SCHEMA_CHARS:
+                schema_str = schema_str[:MAX_SCHEMA_CHARS] + "... [schema truncated]"
+            domain_type, suggested_questions = await _generate_questions(schema_str)
 
         source.domain_type = domain_type
         
@@ -130,11 +140,12 @@ async def run_auto_analysis(source_id: str, user_id: str, db: AsyncSession) -> N
 
 # ── Step 1: LLM Question Generator ────────────────────────────────────────────
 
-async def _generate_questions(schema_str: str):
+async def _generate_questions(schema_str: str, prompt_template: Optional[str] = None):
     """Use LLM to detect domain + generate 5 smart questions."""
     llm = get_llm(temperature=0.3)
 
-    prompt = DISCOVERY_PROMPT.format(schema=schema_str)
+    template = prompt_template or DISCOVERY_PROMPT
+    prompt = template.format(schema=schema_str)
 
     try:
         response = await asyncio.wait_for(llm.ainvoke(prompt), timeout=300.0)

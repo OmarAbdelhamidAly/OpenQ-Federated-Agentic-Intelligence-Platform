@@ -5,17 +5,18 @@
 import io
 import os
 import uuid
-from typing import Annotated
+from typing import Annotated, Optional, Any
 
 import pandas as pd
 import structlog
-from fastapi import APIRouter, BackgroundTasks, Body, Depends, File, HTTPException, Response, UploadFile, status
+from fastapi import APIRouter, BackgroundTasks, Body, Depends, File, HTTPException, Response, UploadFile, status, Form
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.infrastructure.config import settings
 from app.infrastructure.database.postgres import get_db
-from app.infrastructure.api_dependencies import get_current_user, require_admin
+from app.infrastructure.api_dependencies import get_current_user, require_admin, verify_permission
+from app.models.policy import ResourcePolicy
 from app.models.data_source import DataSource
 from app.models.user import User
 from app.schemas.data_source import (
@@ -49,7 +50,7 @@ def _profile_dataframe(df: pd.DataFrame) -> dict:
     }
 
 
-def _profile_sqlite(file_path: str) -> dict:
+def _profile_sqlite(file_path: str) -> dict[str, Any]:
     """Build a schema profile from an uploaded SQLite file."""
     from sqlalchemy import create_engine, inspect, text
     from app.modules.sql.utils.schema_utils import infer_foreign_keys, generate_mermaid_erd
@@ -139,9 +140,29 @@ async def list_data_sources(
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> DataSourceListResponse:
     """List all data sources for the tenant (both roles)."""
-    result = await db.execute(
-        select(DataSource).where(DataSource.tenant_id == current_user.tenant_id)
-    )
+    # ── Phase 3: IAM Filtering ──────
+    if current_user.role == "admin":
+        query = select(DataSource).where(DataSource.tenant_id == current_user.tenant_id)
+    else:
+        # Check for explicit ALLOW policies OR sources they own (tenant-default)
+        # For simplicity in this deep dive, we allow admins to see all, 
+        # but viewers see only what is explicitly shared OR if they are the "owner" (if we had an owner col).
+        # Fallback: Viewers can see all in tenant UNLESS a DENY exists.
+        
+        # More robust: Let's fetch all DENYs for this user
+        deny_res = await db.execute(
+            select(ResourcePolicy.resource_id).where(
+                ResourcePolicy.principal_id == current_user.id,
+                ResourcePolicy.effect == "deny"
+            )
+        )
+        denied_ids = [str(r) for r in deny_res.scalars().all()]
+        
+        query = select(DataSource).where(DataSource.tenant_id == current_user.tenant_id)
+        if denied_ids:
+            query = query.where(DataSource.id.not_in([uuid.UUID(d) for d in denied_ids if d != "*"]))
+
+    result = await db.execute(query)
     sources = result.scalars().all()
     return DataSourceListResponse(
         data_sources=[DataSourceResponse.model_validate(s) for s in sources]
@@ -158,6 +179,8 @@ async def upload_file(
     db: Annotated[AsyncSession, Depends(get_db)],
     background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
+    context_hint: Annotated[Optional[str], Form()] = None,
+    indexing_mode: Annotated[Optional[str], Form()] = "deep_vision",
 ) -> DataSourceResponse:
     """Upload a CSV, XLSX, SQLite (.sqlite/.db) or SQL dump (.sql) file as a data source.
 
@@ -184,7 +207,7 @@ async def upload_file(
         )
 
     ext = os.path.splitext(safe_name)[1].lower()
-    ALLOWED = (".csv", ".xlsx", ".sqlite", ".db", ".sql")
+    ALLOWED = (".csv", ".xlsx", ".sqlite", ".db", ".sql", ".pdf", ".json")
     if ext not in ALLOWED:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -203,11 +226,84 @@ async def upload_file(
     
     # Reset the file-like object so the rest of the handler can re-read it
     await file.seek(0)
-    # file.file = io.BytesIO(contents) # No longer needed if we just seek(0)
 
     # Save file to tenant directory
     tenant_id_str = str(admin.tenant_id)
     file_path = await save_upload_file(file, tenant_id_str)
+
+    # ── PDF Document ────────────────────────────────────────────────────
+    if ext == ".pdf":
+        # Base schema for PDF
+        schema_json = {
+            "page_count": 0,
+            "total_patches": 0,
+            "source_type": "pdf",
+            "indexing_mode": indexing_mode
+        }
+        
+        source = DataSource(
+            id=uuid.uuid4(),
+            tenant_id=admin.tenant_id,
+            type="pdf",
+            name=file.filename,
+            file_path=file_path,
+            context_hint=context_hint,
+            schema_json=schema_json,
+            indexing_status="running",
+        )
+        db.add(source)
+        await db.commit()
+        await db.refresh(source)
+
+        logger.info(
+            "pdf_source_uploaded",
+            tenant_id=tenant_id_str,
+            user_id=str(admin.id),
+            source_id=str(source.id),
+            filename=file.filename,
+        )
+        from app.worker import celery_app
+        celery_app.send_task("process_source_indexing", args=[str(source.id)], queue="pillar.pdf")
+        return DataSourceResponse.model_validate(source)
+
+    # ── JSON Document ───────────────────────────────────────────────────
+    if ext == ".json":
+        schema_json: dict[str, Any] = {"source_type": "json"}
+        try:
+            import json as json_lib
+            await file.seek(0)
+            raw_data = await file.read()
+            json_data = json_lib.loads(raw_data)
+            if isinstance(json_data, list):
+                schema_json["item_count"] = len(json_data)
+            elif isinstance(json_data, dict):
+                schema_json["key_count"] = len(json_data.keys())
+        except Exception:
+            pass
+
+        source = DataSource(
+            id=uuid.uuid4(),
+            tenant_id=admin.tenant_id,
+            type="json",
+            name=file.filename,
+            file_path=file_path,
+            context_hint=context_hint,
+            schema_json=schema_json,
+        )
+        db.add(source)
+        await db.commit()
+        await db.refresh(source)
+
+        logger.info(
+            "json_source_uploaded",
+            tenant_id=tenant_id_str,
+            user_id=str(admin.id),
+            source_id=str(source.id),
+            filename=file.filename,
+        )
+        from app.worker import celery_app
+        celery_app.send_task("process_source_discovery", args=[str(source.id), str(admin.id)], queue="pillar.json")
+        return DataSourceResponse.model_validate(source)
 
     # ── CSV / XLSX ──────────────────────────────────────────────────────
     if ext in (".csv", ".xlsx"):
@@ -229,6 +325,7 @@ async def upload_file(
             type="csv",
             name=file.filename,
             file_path=file_path,
+            context_hint=context_hint,
             schema_json=schema_json,
         )
         db.add(source)
@@ -243,8 +340,8 @@ async def upload_file(
             filename=file.filename,
             rows=schema_json.get("row_count", 0),
         )
-        # Trigger one-time auto-analysis in background
-        background_tasks.add_task(run_auto_analysis, str(source.id), str(admin.id), db)
+        from app.worker import celery_app
+        celery_app.send_task("process_source_discovery", args=[str(source.id), str(admin.id)], queue="pillar.csv")
         return DataSourceResponse.model_validate(source)
 
     # ── SQLite file (.sqlite / .db) ─────────────────────────────────────
@@ -266,6 +363,7 @@ async def upload_file(
             type="sql",             # treated as SQL source by the pipeline
             name=file.filename,
             file_path=file_path,   # pipeline uses this as sqlite:///file_path
+            context_hint=context_hint,
             schema_json=schema_json,
         )
         db.add(source)
@@ -279,8 +377,8 @@ async def upload_file(
             source_id=str(source.id),
             filename=file.filename,
         )
-        # Trigger one-time auto-analysis in background
-        background_tasks.add_task(run_auto_analysis, str(source.id), str(admin.id), db)
+        from app.worker import celery_app
+        celery_app.send_task("process_source_discovery", args=[str(source.id), str(admin.id)], queue="pillar.sql")
         return DataSourceResponse.model_validate(source)
 
     # ── SQL dump (.sql) → import into SQLite ────────────────────────────
@@ -315,6 +413,7 @@ async def upload_file(
             type="sql",
             name=file.filename,
             file_path=sqlite_path,  # pipeline connects to this SQLite file
+            context_hint=context_hint,
             schema_json=schema_json,
         )
         db.add(source)
@@ -328,8 +427,9 @@ async def upload_file(
             source_id=str(source.id),
             filename=file.filename,
         )
-        # Trigger one-time auto-analysis in background
-        background_tasks.add_task(run_auto_analysis, str(source.id), str(admin.id), db)
+        # Trigger discovery/profiling phase
+        from app.worker import celery_app
+        celery_app.send_task("process_source_discovery", args=[str(source.id), str(admin.id)], queue="pillar.sql")
         return DataSourceResponse.model_validate(source)
 
 
@@ -381,8 +481,8 @@ async def connect_sql(
         engine=body.engine,
         host=body.host,
     )
-    # Trigger one-time auto-analysis in background
-    background_tasks.add_task(run_auto_analysis, str(source.id), str(admin.id), db)
+    from app.worker import celery_app
+    celery_app.send_task("auto_analysis_task", args=[str(source.id), str(admin.id)], queue='celery')
     return DataSourceResponse.model_validate(source)
 
 
@@ -393,6 +493,8 @@ async def delete_data_source(
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> Response:
     """Delete a data source (admin only)."""
+    # ── Phase 3: IAM Check ──────
+    await verify_permission("delete", str(source_id), admin, db)
 
     result = await db.execute(
         select(DataSource).where(
@@ -429,10 +531,12 @@ async def get_dashboard(
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> DataSourceResponse:
     """Return a DataSource with its auto_analysis_json for the dashboard.
-
+    
     Both admin and viewer can access this. The frontend polls this endpoint
     while auto_analysis_status == 'running' and renders charts when 'done'.
     """
+    # ── Phase 3: IAM Check ──────
+    await verify_permission("query", str(source_id), current_user, db)
     result = await db.execute(
         select(DataSource).where(
             DataSource.id == source_id,

@@ -58,7 +58,7 @@ Schema:
 
 # ── Main Service Function ──────────────────────────────────────────────────────
 
-async def run_auto_analysis(source_id: str, db: AsyncSession) -> None:
+async def run_auto_analysis(source_id: str, user_id: str, db: AsyncSession) -> None:
     """Run the auto-analysis pipeline for a DataSource.
 
     This function is called as a FastAPI BackgroundTask immediately after

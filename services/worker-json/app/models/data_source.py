@@ -16,7 +16,8 @@ from app.infrastructure.database.postgres import Base
 class DataSource(Base):
     __tablename__ = "data_sources"
     __table_args__ = (
-        CheckConstraint("type IN ('csv', 'sql', 'document')", name="ck_data_sources_type"),
+        CheckConstraint("type IN ('csv', 'sql', 'document', 'pdf', 'json')", name="ck_data_sources_type"),
+        CheckConstraint("indexing_status IN ('pending', 'running', 'done', 'failed')", name="ck_data_sources_indexing_status"),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(
@@ -27,7 +28,7 @@ class DataSource(Base):
     )
     type: Mapped[str] = mapped_column(
         String(10), nullable=False
-    )  # "csv" | "sql" | "document"
+    )  # "csv" | "sql" | "document" | "pdf" | "json"
     name: Mapped[str] = mapped_column(Text, nullable=False)
     file_path: Mapped[Optional[str]] = mapped_column(
         Text, nullable=True
@@ -41,12 +42,16 @@ class DataSource(Base):
     auto_analysis_status: Mapped[str] = mapped_column(
         String(10), nullable=False, default="pending"
     )  # "pending" | "running" | "done" | "failed"
+    indexing_status: Mapped[str] = mapped_column(
+        String(10), nullable=False, default="done"
+    )  # "pending" | "running" | "done" | "failed" (done by default for non-PDF)
     auto_analysis_json: Mapped[Optional[Dict[str, Any]]] = mapped_column(
         JSON, nullable=True
     )  # 5 auto-generated analysis results saved permanently
     domain_type: Mapped[Optional[str]] = mapped_column(
         String(30), nullable=True
     )  # LLM-detected domain: "sales"|"hr"|"finance"|"inventory"|"customer"|"mixed"
+    context_hint: Mapped[Optional[str]] = mapped_column(Text, nullable=True) # User-provided hint
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
     )

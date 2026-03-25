@@ -29,8 +29,10 @@ class DataSourceResponse(BaseModel):
     file_path: Optional[str] = None
     schema_summary: Optional[Dict[str, Any]] = Field(None, validation_alias="schema_json", serialization_alias="schema_json")
     auto_analysis_status: str = "pending"   # pending | running | done | failed
+    indexing_status: str = "done"           # pending | running | done | failed
     auto_analysis_json: Optional[Dict[str, Any]] = None
     domain_type: Optional[str] = None
+    context_hint: Optional[str] = None
     created_at: datetime
 
     model_config = {"from_attributes": True}

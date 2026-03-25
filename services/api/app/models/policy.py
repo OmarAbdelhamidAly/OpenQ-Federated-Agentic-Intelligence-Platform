@@ -31,3 +31,32 @@ class SystemPolicy(Base):
 
     # Relationships
     tenant = relationship("Tenant")
+
+
+class ResourcePolicy(Base):
+    """
+    Advanced IAM: Principal-Action-Resource model.
+    Defines who (Principal) can do what (Action) to which (Resource).
+    """
+    __tablename__ = "resource_policies"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    tenant_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("tenants.id"), nullable=False, index=True
+    )
+    principal_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), nullable=False, index=True
+    )  # User ID or Team ID
+    
+    action: Mapped[str] = mapped_column(String(50), nullable=False)  # "query", "upload", "delete", "*"
+    resource_id: Mapped[str] = mapped_column(String(100), nullable=False)  # DataSource UUID or "pillar.*" or "*"
+    effect: Mapped[str] = mapped_column(String(10), default="allow")  # "allow" | "deny"
+    
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+    )
+
+    tenant = relationship("Tenant")
+    principal_user = relationship("User", foreign_keys=[principal_id], primaryjoin="ResourcePolicy.principal_id == User.id")

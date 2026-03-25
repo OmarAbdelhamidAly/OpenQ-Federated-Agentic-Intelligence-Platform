@@ -13,6 +13,7 @@ class DocumentBase(BaseModel):
 
 class DocumentCreate(DocumentBase):
     kb_id: uuid.UUID
+    context_hint: Optional[str] = None # 'invoice', 'legal', 'audit_report', etc.
 
 
 class DocumentResponse(DocumentBase):
@@ -21,6 +22,7 @@ class DocumentResponse(DocumentBase):
     status: str
     file_path: str
     metadata_json: Optional[Dict[str, Any]] = None
+    context_hint: Optional[str] = None
     created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)

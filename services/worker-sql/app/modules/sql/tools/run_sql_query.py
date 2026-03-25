@@ -9,12 +9,12 @@ from sqlalchemy.ext.asyncio import create_async_engine, AsyncEngine
 from sqlalchemy import text
 
 from app.infrastructure.sql_guard import validate_select_only
-from app.modules.shared.tools.load_data_source import ensure_async_connection_string
+from app.modules.sql.tools.load_data_source import ensure_async_connection_string
 
 
 class SQLQueryInput(BaseModel):
     """Input schema for run_sql_query tool."""
-    connection_string: str = Field(..., description="SQLAlchemy connection string")
+    connection_string: Optional[str] = Field(None, description="Database connection string")
     query: str = Field(..., description="SELECT query to execute")
     params: Optional[Dict[str, Any]] = Field(
         None, description="Named parameters for the query"
@@ -119,10 +119,12 @@ async def _run_sql_query_internal(
 
 @tool("run_sql_query", args_schema=SQLQueryInput)
 async def run_sql_query(
-    connection_string: str,
     query: str,
+    connection_string: Optional[str] = None,
     params: Optional[Dict[str, Any]] = None,
     limit: int = 1000,
 ) -> Dict[str, Any]:
     """Execute a SELECT-only SQL query asynchronously with pooling and caching."""
+    if not connection_string:
+         raise ToolException("connection_string is required but was not provided.")
     return await _run_sql_query_internal(connection_string, query, params, limit)

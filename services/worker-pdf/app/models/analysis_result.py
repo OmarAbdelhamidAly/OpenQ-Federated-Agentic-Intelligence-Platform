@@ -39,5 +39,9 @@ class AnalysisResult(Base):
         JSON, nullable=True
     )  # Vector embedding for historical memory search
 
+    visual_context: Mapped[Optional[List[Dict[str, Any]]]] = mapped_column(
+        JSON, nullable=True
+    )
+
     # Relationships
     job = relationship("AnalysisJob", back_populates="result")

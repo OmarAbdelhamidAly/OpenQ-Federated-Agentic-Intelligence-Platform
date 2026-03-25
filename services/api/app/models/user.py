@@ -25,6 +25,9 @@ class User(Base):
     tenant_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("tenants.id"), nullable=False, index=True
     )
+    group_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("team_groups.id"), nullable=True, index=True
+    )
     email: Mapped[str] = mapped_column(Text, unique=True, nullable=False)
     password_hash: Mapped[str] = mapped_column(Text, nullable=False)
     role: Mapped[str] = mapped_column(
@@ -39,4 +42,9 @@ class User(Base):
 
     # Relationships
     tenant = relationship("Tenant", back_populates="users")
+    group = relationship("TeamGroup", back_populates="users")
     analysis_jobs = relationship("AnalysisJob", back_populates="user", cascade="all, delete-orphan")
+
+    @property
+    def branding_config(self) -> Optional[dict]:
+        return self.tenant.branding_config if self.tenant else None

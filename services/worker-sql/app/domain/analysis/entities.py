@@ -66,15 +66,16 @@ class AnalysisState(TypedDict, total=False):
     analysis_results: Annotated[Optional[Dict[str, Any]], merge_dicts]
 
     # ── Visualization Agent Output ────────────────────────────
-    chart_json: Annotated[Optional[Dict[str, Any]], merge_dicts]  # Plotly figure JSON
+    chart_json: Annotated[Optional[Dict[str, Any]], merge_dicts]  # ECharts or Plotly figure JSON
+    chart_engine: Optional[str]  # "echarts" | "plotly"
 
     # ── Insight Agent Output ──────────────────────────────────
     insight_report: Optional[str]
     executive_summary: Optional[str]
 
     # ── Recommendation Agent Output ───────────────────────────
-    recommendations: Annotated[Optional[List[Dict[str, Any]]], safe_append]
-    follow_up_suggestions: Annotated[Optional[List[str]], safe_append]
+    recommendations: Optional[List[Dict[str, Any]]]
+    follow_up_suggestions: Optional[List[str]]
 
     # ── Conversational Memory ─────────────────────────────────
     history: Annotated[Optional[List[Dict[str, str]]], safe_append]  # List of {role, content}

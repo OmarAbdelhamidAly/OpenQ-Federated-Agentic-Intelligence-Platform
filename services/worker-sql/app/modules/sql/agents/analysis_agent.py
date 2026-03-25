@@ -9,118 +9,140 @@ Includes retry logic: up to 3 attempts on failure.
 from __future__ import annotations
 
 import json
+import structlog
 from typing import Any, Dict
+
+logger = structlog.get_logger(__name__)
 
 from app.infrastructure.llm import get_llm
 
 from app.domain.analysis.entities import AnalysisState
 from app.infrastructure.config import settings
-from app.modules.shared.tools.load_data_source import get_connection_string
-from app.modules.shared.utils.retrieval import get_kb_context
+from app.modules.sql.tools.load_data_source import get_connection_string
+from app.modules.sql.utils.retrieval import get_kb_context
 from app.modules.sql.utils.sql_validator import SQLValidator
 from app.modules.sql.tools.run_sql_query import get_async_engine
 from app.modules.sql.utils.golden_sql import golden_sql_manager
 from app.modules.sql.utils.schema_selector import schema_selector
 from app.modules.sql.utils.schema_mapper import schema_mapper
 from app.modules.sql.utils.insight_memory import insight_memory
+from langchain_core.messages import SystemMessage, HumanMessage, ToolMessage
 
 # ── Prompt ────────────────────────────────────────────────────────────────────
 
-SQL_ANALYSIS_PROMPT = """You are a SQL expert. Given the user question, database schema, and a dictionary of business metrics,
-write a safe, read-only SELECT query to answer the question.
+REACT_SYSTEM_PROMPT = """You are an expert SQL analyst. 
+Use the provided tools to explore the database and generate an accurate SQL query.
+Follow the ReAct pattern: Thought, Action, Observation.
 
-Rules:
-- Only SELECT queries. No INSERT, UPDATE, DELETE, DROP, ALTER, TRUNCATE.
-- Use parameterised query syntax (:param_name) for any user-supplied values.
-- Keep results under 1000 rows using LIMIT.
-- Use the table and column names exactly as they appear in the schema.
-- **CRITICAL**: Use the "Business Metrics Dictionary" as the primary definition for terms. If a metric exists there, use its 'formula'. DO NOT guess or use hardcoded assumptions if a metric is provided.
-- For joins, always refer to the Data Relationships (ERD) provided.
-
-Respond ONLY with valid JSON:
-{{
-  "query": "SELECT ... FROM ... WHERE ... LIMIT 100",
-  "params": {{}}
-}}
-
-Business Metrics Dictionary:
-{metrics}
-
-Schema: {schema}
-Question: {question}
-Intent: {intent}
-Relevant columns: {columns}
-
-Knowledge Base Context (if relevant):
-{kb_context}
-
-{error_hint}"""
-
-
-# ── Main Agent ────────────────────────────────────────────────────────────────
-
-# ── ReAct Agent ────────────────────────────────────────────────────────────────
-
-from langchain_core.messages import HumanMessage, SystemMessage, ToolMessage
-from langchain_core.utils.function_calling import convert_to_openai_tool
-import structlog
-
-logger = structlog.get_logger("app.modules.sql.agents.analysis_agent")
-
-REACT_SYSTEM_PROMPT = """You are an elite SQL expert. Your job is to write a single, correct, read-only SELECT query that fully answers the user's question.
-
-You have access to a `run_sql_query` tool to run exploratory queries and verify your assumptions.
-
-═══════════════════════════════════════════════════
-MANDATORY 5-STEP REASONING PROCESS
-═══════════════════════════════════════════════════
-STEP 1 — READ THE ERD: Always look at the "Relationships" section of the schema first.
-         Identify every table and foreign-key link relevant to the question.
-
-STEP 2 — PLAN THE JOINS: Determine the join path.
-         Example: if the question is about customer spending, the path is:
-         Customer → Invoice → InvoiceLine
-         (because actual line amounts are in InvoiceLine, not Invoice)
-
-STEP 3 — IDENTIFY AGGREGATIONS: Determine what to SUM/COUNT/AVG.
-         Spending = SUM(InvoiceLine.UnitPrice * InvoiceLine.Quantity)
-
-STEP 4 — USE THE TOOL if uncertain: Run a LIMIT 5 query to verify column names or sample data.
-
-STEP 5 — OUTPUT the final JSON: {{ "query": "SELECT ...", "params": {{}} }}
-
-═══════════════════════════════════════════════════
-CRITICAL RULES
-═══════════════════════════════════════════════════
-- ONLY SELECT queries. Never INSERT, UPDATE, DELETE, DROP, ALTER.
-- ALWAYS use JOINs when data spans multiple tables — do NOT assume a single table has everything.
-- For aggregation questions (totals, averages, rankings), use GROUP BY + aggregate functions.
-- Use `ORDER BY ... DESC LIMIT N` for "top N" questions.
-- Use exact table/column names from the schema (case-sensitive for SQLite).
-- Parameterise user values with :param_name syntax.
-- Include LIMIT to cap results (max 1000).
-
-═══════════════════════════════════════════════════
-BUSINESS METRICS (Use these formulas when relevant)
-═══════════════════════════════════════════════════
-{metrics}
-
-KNOWLEDGE BASE CONTEXT:
-{kb_context}
-
-GOLDEN SQL EXAMPLES (proven patterns — reuse their JOIN structure when applicable):
-{golden_examples}
 {complexity_instruction}
 
-VALIDATION FEEDBACK:
-If `run_sql_query` returns an error, read the error carefully and fix the column/table name.
-If `reflection_context` indicates 0 rows, re-examine the WHERE filters and remove overly restrictive conditions.
+Business Metrics:
+{metrics}
+
+Reference Context:
+{kb_context}
+
+Golden Examples:
+{golden_examples}
+
+Conversational Memory:
+{chat_history}
+
+{error_hint}
+
+Final Answer format must be JSON: {{"query": "SELECT ...", "params": {{}}}}
+
+IMPORTANT: Be extremely concise. Avoid unnecessary preamble. 
+If hitting rate limits, the system will retry, but smaller prompts/responses are faster.
 """
+
+SQLCODER_TEMPLATE = """### Task
+Generate a SQL query to answer the user question.
+- Only SELECT queries are allowed.
+- Use parameterised syntax (:param_name) for any filters.
+- Use the provided database schema to understand relationships.
+- Use the Business Metrics formula if defined.
+
+### Business Metrics
+{metrics}
+
+### Database Schema
+The following is the DDL for the tables relevant to the question:
+{schema}
+
+### Reference Context
+Knowledge Base: {kb_context}
+Golden Examples: {golden_examples}
+
+### Question
+{question}
+
+### Answer
+"""
+
+# ... (rest of the file remains similar but uses the new DDL format in compact_schema)
+
+def _format_ddl_schema(schema_summary: Dict[str, Any]) -> str:
+    """Format the schema summary into standard DDL (CREATE TABLE) statements."""
+    if not schema_summary.get("tables"):
+        return "{}"
+        
+    ddl_statements = []
+    
+    for t in schema_summary.get("tables", []):
+        table_name = t['table']
+        columns = []
+        for c in t.get("columns", []):
+            col_def = f"  {c['name']} {c['dtype']}"
+            if c.get("primary_key"):
+                col_def += " PRIMARY KEY"
+            if c.get("description"):
+                col_def += f" -- {c['description']}"
+            columns.append(col_def)
+        
+        # Add foreign keys if available in metadata
+        # (Assuming relationships are stored or derived from mermaid_erd)
+        
+        ddl = f"CREATE TABLE {table_name} (\n" + ",\n".join(columns) + "\n);"
+        ddl_statements.append(ddl)
+        
+    # Append Mermaid ERD as a high-level overview if it helps
+    erd = schema_summary.get("mermaid_erd")
+    if erd:
+        ddl_statements.append(f"\n/* Relationships Overview (Mermaid):\n{erd}\n*/")
+        
+    return "\n\n".join(ddl_statements)
+
+# ... (I'll apply these changes to the actual file content now)
 
 async def analysis_agent(state: AnalysisState) -> Dict[str, Any]:
     """ReAct agent that generates and validates SQL queries iteratively."""
     from app.modules.sql.tools.run_sql_query import run_sql_query
-    
+
+    # ── Fix 4: Guard against empty schema ──────────────────────────────────────
+    # If data_discovery_agent failed to load any table info (e.g. wrong file
+    # path, failed connection), the LLM has nothing to work with and will
+    # hallucinate non-existent tables/columns → silent 0-row results.
+    # Fail fast here with a clear error instead.
+    schema_summary = state.get("schema_summary", {})
+    if not schema_summary.get("tables"):
+        schema_error = schema_summary.get("error", "No tables found in the database schema.")
+        logger.error(
+            "analysis_agent_aborted_empty_schema",
+            schema_error=schema_error,
+            file_path=state.get("file_path"),
+        )
+        return {
+            "error": (
+                f"Schema discovery returned no tables: {schema_error}. "
+                "Check that the data source file_path is correct and the file exists."
+            )
+        }
+    # ───────────────────────────────────────────────────────────────────────────
+
+    # Currently using Groq/Llama-8b for free tier speed.
+    # To upgrade accuracy, swap to the specialized SQL model below:
+    # llm = get_llm(temperature=0, model="defog/sqlcoder-70b-v2").bind_tools([run_sql_query])
     llm = get_llm(temperature=0).bind_tools([run_sql_query])
 
     metrics_str = json.dumps(state.get("business_metrics", []), indent=2)
@@ -143,13 +165,32 @@ async def analysis_agent(state: AnalysisState) -> Dict[str, Any]:
         else:
             complexity_instruction = f"\nCOMPLEXITY LEVEL: {idx} (ADVANCED)\nGo beyond the surface. Look for correlations or deeper trends related to the question. Use multi-table JOINS and complex filters if appropriate."
 
+    # Add Error/Violation hint if retrying
+    error_hint = ""
+    if state.get("error"):
+        error_hint += f"\n[RETRY HINT] Previous attempt failed: {state['error']}"
+    if state.get("policy_violation"):
+        error_hint += f"\n[POLICY VIOLATION] Previous attempt rejected: {state['policy_violation']}"
+    if state.get("reflection_context"):
+        error_hint += f"\n[REFLECTION] {state['reflection_context']}"
+    if state.get("user_feedback"):
+        error_hint += f"\n[USER FEEDBACK] The user requested a refinement: {state['user_feedback']}"
+
+    # Prepare chat history for conversational memory
+    history_arr = state.get("history", [])
+    chat_history = "No previous conversational context."
+    if history_arr:
+        chat_history = "\n".join([f"[{msg['role'].upper()}]: {msg['content']}" for msg in history_arr])
+
     # Base messages
     messages = [
         SystemMessage(content=REACT_SYSTEM_PROMPT.format(
             metrics=metrics_str, 
             kb_context=kb_context or "None",
             golden_examples=golden_str,
-            complexity_instruction=complexity_instruction
+            complexity_instruction=complexity_instruction,
+            chat_history=chat_history,
+            error_hint=error_hint
         )),
     ]
 
@@ -162,7 +203,7 @@ async def analysis_agent(state: AnalysisState) -> Dict[str, Any]:
                 messages.append(HumanMessage(content=content))
             elif role == "assistant":
                 # Ensure the LLM recognizes its own previous SQL generations
-                messages.append(SystemMessage(content=f"PREVIOUS_TURN_SQL: {content}"))
+                messages.append(HumanMessage(content=f"PREVIOUS_TURN_SQL: {content}"))
 
     # Add Error/Violation hint if retrying
     error_hint = ""
@@ -181,7 +222,7 @@ async def analysis_agent(state: AnalysisState) -> Dict[str, Any]:
     
     # Apply business metadata (Idea 15)
     mapped_schema = schema_mapper.map_schema(relevant_schema)
-    compact_schema = _format_compact_schema(mapped_schema)
+    ddl_schema = _format_ddl_schema(mapped_schema)
     
     # Retrieve historical context (Idea 16)
     past_insights = insight_memory.get_related_insights(state["question"])
@@ -195,14 +236,22 @@ async def analysis_agent(state: AnalysisState) -> Dict[str, Any]:
     if validation_results and validation_results.get("warnings"):
         perf_hint = "\nOptimization Warning: " + "; ".join(validation_results["warnings"])
 
-    messages.append(HumanMessage(content=f"Question: {state['question']}\n{history_str}\nSchema:\n{compact_schema}\n{error_hint}{perf_hint}"))
+    messages.append(HumanMessage(content=SQLCODER_TEMPLATE.format(
+        metrics=metrics_str,
+        schema=ddl_schema,
+        kb_context=kb_context or "None",
+        golden_examples=golden_str,
+        question=state["question"]
+    )))
 
-    # Simple manual ReAct loop (max 3 turns)
+    if error_hint or perf_hint:
+        messages.append(HumanMessage(content=f"IMPORTANT FEEDBACK:\n{error_hint}\n{perf_hint}"))
+      # Simple manual ReAct loop (max 3 turns)
     generated_sql = None
     params = {}
     steps = state.get("intermediate_steps") or []
     
-    for turn in range(5):  # 5 turns allows complex multi-table JOIN reasoning
+    for turn in range(3):  # 3 turns for lean reasoning
         response = await llm.ainvoke(messages)
         
         # Log token usage
@@ -239,14 +288,28 @@ async def analysis_agent(state: AnalysisState) -> Dict[str, Any]:
                 args["connection_string"] = get_connection_string(state)
                 args["limit"] = 5
                 
-                steps.append({"role": "tool_call", "tool": "run_sql_query", "args": args})
+                # Internal execution (Idea: don't pollute LLM history with secret connection strings)
+                clean_args = {k: v for k, v in args.items() if k != "connection_string"}
+                steps.append({"role": "tool_call", "tool": "run_sql_query", "args": clean_args})
+                
                 try:
-                    tool_output = await run_sql_query.ainvoke(args)
-                    steps.append({"role": "tool_result", "content": "Query executed successfully."})
-                    messages.append(ToolMessage(content=json.dumps(tool_output), tool_call_id=tool_call["id"]))
+                   from app.modules.sql.tools.run_sql_query import _run_sql_query_internal
+                   tool_output = await _run_sql_query_internal(**args)
+                   steps.append({"role": "tool_result", "content": "Query executed successfully."})
+                   
+                   # Pass clean_args back in the ToolMessage to keep LLM's context clean
+                   messages.append(ToolMessage(
+                       content=json.dumps(tool_output), 
+                       name=tool_call["name"],
+                       tool_call_id=tool_call["id"]
+                   ))
                 except Exception as e:
-                    steps.append({"role": "tool_result", "content": f"Query failed: {str(e)}"})
-                    messages.append(ToolMessage(content=f"Error: {str(e)}", tool_call_id=tool_call["id"]))
+                   steps.append({"role": "tool_result", "content": f"Query failed: {str(e)}"})
+                   messages.append(ToolMessage(
+                       content=f"Error: {str(e)}", 
+                       name=tool_call["name"],
+                       tool_call_id=tool_call["id"]
+                   ))
 
     if not generated_sql:
         logger.warning("sql_generation_failed_after_react", job_id=state.get("thread_id"))
@@ -282,25 +345,32 @@ async def analysis_agent(state: AnalysisState) -> Dict[str, Any]:
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 def _parse_json(content: str) -> Dict[str, Any]:
-    """Extract and parse JSON from LLM response, stripping markdown fences."""
+    """Extract and parse JSON from LLM response, handling markers or raw text."""
     if not isinstance(content, str) or not content.strip():
         raise ValueError("LLM returned an empty response.")
 
     content = content.strip()
 
-    if content.startswith("```"):
-        lines = content.split("\n")
-        inner_lines = []
-        in_block = False
-        for line in lines:
-            if line.startswith("```") and not in_block:
-                in_block = True
-                continue
-            if line.startswith("```") and in_block:
-                break
-            if in_block:
-                inner_lines.append(line)
-        content = "\n".join(inner_lines)
+    # 1. Try finding JSON within markdown code blocks
+    if "```json" in content:
+        content = content.split("```json")[-1].split("```")[0].strip()
+    elif "```" in content:
+        # If there are multiple blocks, try the last one
+        blocks = content.split("```")
+        if len(blocks) >= 3:
+            content = blocks[-2].strip()
+        else:
+            content = blocks[1].strip()
+    
+    # 2. Heuristic: Find the first '{' and last '}'
+    start_idx = content.find('{')
+    end_idx = content.rfind('}')
+    if start_idx != -1 and end_idx != -1:
+        json_str = str(content[start_idx : end_idx + 1])
+        try:
+            return json.loads(json_str)
+        except json.JSONDecodeError:
+            pass # Fall back to full content parse if substring fails
 
     return json.loads(content)
 

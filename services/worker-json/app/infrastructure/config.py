@@ -28,6 +28,8 @@ class Settings(BaseSettings):
 
     # ── Database ──────────────────────────────────────────────
     DATABASE_URL: str = "postgresql+asyncpg://postgres:postgres@localhost:5432/analyst_agent"
+    MONGO_URI: str = "mongodb://localhost:27017"
+    MONGO_DB: str = "analysis_db"
 
     # ── Redis ─────────────────────────────────────────────────
     REDIS_URL: str = "redis://localhost:6379/0"
@@ -43,7 +45,7 @@ class Settings(BaseSettings):
     GROQ_API_KEY: str = ""
     GEMINI_API_KEY: str = ""
     OLLAMA_BASE_URL: str = "http://localhost:11434"
-    LLM_MODEL: str = "groq/llama-3.1-8b-instant"  # Default fallback, override via .env
+    LLM_MODEL: str = "gemini-flash-latest"  # Use Gemini Flash as primary for reliability
 
 
 

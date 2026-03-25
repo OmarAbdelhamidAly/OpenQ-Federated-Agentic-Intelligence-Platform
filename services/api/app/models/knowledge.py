@@ -48,6 +48,7 @@ class Document(Base):
     file_path: Mapped[str] = mapped_column(Text, nullable=False)
     status: Mapped[str] = mapped_column(String(20), default="pending")  # pending, processing, indexed, error
     metadata_json: Mapped[Optional[Dict[str, Any]]] = mapped_column(JSON, nullable=True)
+    context_hint: Mapped[Optional[str]] = mapped_column(Text, nullable=True) # User-provided hint: 'invoice', 'legal', etc.
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
     )

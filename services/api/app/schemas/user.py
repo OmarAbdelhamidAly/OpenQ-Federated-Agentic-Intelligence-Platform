@@ -14,16 +14,19 @@ class InviteUserRequest(BaseModel):
     email: EmailStr
     password: str = Field(..., min_length=8, max_length=128)
     role: Literal["admin", "viewer"]
+    group_id: Optional[uuid.UUID] = None
 
 
 class UserResponse(BaseModel):
     """Single user representation."""
     id: uuid.UUID
     tenant_id: uuid.UUID
+    group_id: Optional[uuid.UUID] = None
     email: str
     role: str
     created_at: datetime
     last_login: Optional[datetime] = None
+    branding_config: Optional[dict] = None
 
     model_config = {"from_attributes": True}
 

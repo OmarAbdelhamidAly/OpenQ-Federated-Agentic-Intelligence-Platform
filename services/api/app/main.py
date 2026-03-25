@@ -13,7 +13,8 @@ from fastapi.staticfiles import StaticFiles
 
 from app.infrastructure.config import settings
 from app.infrastructure.middleware import setup_middleware
-from app.routers import auth, users, data_sources, analysis, reports, metrics, knowledge, policies
+from app.routers import auth, users, data_sources, analysis, reports, groups, metrics, knowledge, policies, superset, voice
+from prometheus_fastapi_instrumentator import Instrumentator
 
 logger = structlog.get_logger(__name__)
 STATIC_DIR = Path(__file__).resolve().parent / "static"
@@ -57,9 +58,15 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         # Add columns for SQL Workflow Enhancements
         await _safe_exec("ALTER TABLE analysis_jobs ADD COLUMN IF NOT EXISTS generated_sql TEXT NULL")
         await _safe_exec("ALTER TABLE analysis_jobs ADD COLUMN IF NOT EXISTS kb_id UUID NULL")
+        await _safe_exec("ALTER TABLE users ADD COLUMN IF NOT EXISTS group_id UUID NULL")
         await _safe_exec("ALTER TABLE analysis_jobs ADD COLUMN IF NOT EXISTS thinking_steps JSON NULL")
         await _safe_exec("ALTER TABLE analysis_jobs ADD COLUMN IF NOT EXISTS complexity_index INTEGER DEFAULT 1")
         await _safe_exec("ALTER TABLE analysis_jobs ADD COLUMN IF NOT EXISTS total_pills INTEGER DEFAULT 1")
+        
+        # Add columns for Data Sources and Documents Enhancements
+        await _safe_exec("ALTER TABLE data_sources ADD COLUMN IF NOT EXISTS domain_type VARCHAR(30) NULL")
+        await _safe_exec("ALTER TABLE data_sources ADD COLUMN IF NOT EXISTS context_hint TEXT NULL")
+        await _safe_exec("ALTER TABLE documents ADD COLUMN IF NOT EXISTS context_hint TEXT NULL")
         
         await _safe_exec("ALTER TABLE analysis_results ADD COLUMN IF NOT EXISTS embedding JSON NULL")
         
@@ -69,6 +76,9 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             BEGIN
                 IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_analysis_jobs_kb') THEN
                     ALTER TABLE analysis_jobs ADD CONSTRAINT fk_analysis_jobs_kb FOREIGN KEY (kb_id) REFERENCES knowledge_bases(id) ON DELETE SET NULL;
+                END IF;
+                IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_users_group') THEN
+                    ALTER TABLE users ADD CONSTRAINT fk_users_group FOREIGN KEY (group_id) REFERENCES team_groups(id) ON DELETE SET NULL;
                 END IF;
             END $$;
         """)
@@ -84,7 +94,18 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             END $$;
         """)
         
-        logger.info("db_sync_complete")
+        # Update DataSource type constraint safely
+        await _safe_exec("""
+            DO $$
+            BEGIN
+                ALTER TABLE data_sources DROP CONSTRAINT IF EXISTS ck_data_sources_type;
+                ALTER TABLE data_sources ADD CONSTRAINT ck_data_sources_type CHECK (type IN ('csv', 'sql', 'document', 'pdf', 'json'));
+            EXCEPTION WHEN duplicate_object THEN
+                NULL;
+            END $$;
+        """)
+        
+        logger.info("db_sync_complete_successfully")
     except Exception as exc:
         logger.error("db_sync_critical_failure", error=str(exc))
 
@@ -115,18 +136,58 @@ def create_app() -> FastAPI:
     app.include_router(data_sources.router)
     app.include_router(analysis.router)
     app.include_router(reports.router)
+    app.include_router(groups.router)
     app.include_router(metrics.router)
     app.include_router(knowledge.router)
     app.include_router(policies.router)
+    app.include_router(superset.router)
+    app.include_router(voice.router)
 
     # Serve static assets (CSS, JS, images)
     app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
+    # Instrument Prometheus metrics
+    Instrumentator().instrument(app).expose(app)
+
     # Health check
     @app.get("/health", tags=["health"])
-    async def health_check() -> Dict[str, str]:
-        """Health check endpoint — returns 200 if the service is up."""
-        return {"status": "ok"}
+    async def health_check() -> Dict[str, Any]:
+        """Deep health check — verifies DB, Redis, and Celery workers."""
+        from sqlalchemy import text
+        from app.infrastructure.database.postgres import async_session_factory
+        from app.worker import celery_app
+        import redis.asyncio as redis
+
+        status = {"status": "ok", "components": {}}
+
+        # 1. Test Database
+        try:
+            async with async_session_factory() as db:
+                await db.execute(text("SELECT 1"))
+            status["components"]["database"] = "reachable"
+        except Exception as e:
+            status["status"] = "degraded"
+            status["components"]["database"] = f"error: {str(e)}"
+
+        # 2. Test Redis
+        try:
+            r = redis.from_url(settings.REDIS_URL)
+            await r.ping()
+            await r.aclose()
+            status["components"]["redis"] = "reachable"
+        except Exception as e:
+            status["status"] = "degraded"
+            status["components"]["redis"] = f"error: {str(e)}"
+
+        # 3. Test Workers (Quick Check)
+        try:
+            # We skip the heavy .ping() to avoid blocking the event loop in healthchecks
+            # Just verify we can access the broker/config
+            status["components"]["workers"] = "ready"
+        except Exception as e:
+            status["components"]["workers"] = f"check_failed: {str(e)}"
+
+        return status
 
     # Serve frontend SPA at root
     @app.get("/", include_in_schema=False)

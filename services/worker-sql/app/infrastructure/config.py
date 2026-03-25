@@ -43,7 +43,7 @@ class Settings(BaseSettings):
     GROQ_API_KEY: str = ""
     GEMINI_API_KEY: str = ""
     OLLAMA_BASE_URL: str = "http://localhost:11434"
-    LLM_MODEL: str = "groq/llama-3.1-8b-instant"  # Default fallback, override via .env
+    LLM_MODEL: str = "gemini-flash-latest"  # Use Gemini Flash as primary for reliability
 
 
 
@@ -62,6 +62,16 @@ class Settings(BaseSettings):
 
     # ── Upload Limits ─────────────────────────────────────────
     MAX_UPLOAD_SIZE_MB: int = 500
+
+    # ── File Path Resolution ───────────────────────────────────
+    # When running in Docker, SQLite files are stored inside the container at a
+    # path like /app/uploads/... The worker-sql container needs to know where
+    # those files are mounted. Set SQLITE_BASE_DIR to the host/container mount
+    # path so `load_data_source.get_connection_string()` can find the file.
+    # Example (docker-compose.yml):
+    #   environment:
+    #     SQLITE_BASE_DIR: /app/uploads
+    SQLITE_BASE_DIR: str = ""   # Empty = use path from DB as-is (local dev)
 
     @model_validator(mode="after")
     def _validate_production_secrets(self) -> "Settings":

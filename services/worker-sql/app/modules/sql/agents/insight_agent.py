@@ -8,7 +8,11 @@ separate so each pipeline folder is self-contained.
 from __future__ import annotations
 
 import json
+import re
+import structlog
 from typing import Any, Dict
+
+logger = structlog.get_logger(__name__)
 
 from app.infrastructure.llm import get_llm
 
@@ -29,7 +33,9 @@ Based on the analysis results and supplemental knowledge base context, write:
    - Include the key number.
    - State the implication.
 
-Respond in JSON format:
+Respond in STRICT JSON format. 
+NO PREAMBLE. NO EXPLANATION. JUST THE JSON OBJECT.
+
 {{
   "insight_report": "...",
   "executive_summary": "..."
@@ -79,22 +85,55 @@ async def insight_agent(state: AnalysisState) -> Dict[str, Any]:
     try:
         response = await llm.ainvoke(prompt)
         content = response.content
+        parsed = _parse_json(content)
 
-        if isinstance(content, str):
-            content = content.strip()
-            if content.startswith("```"):
-                content = content.split("\n", 1)[1]
-                content = content.rsplit("```", 1)[0]
-            parsed = json.loads(content)
-        else:
-            parsed = {}
+        if not parsed:
+            logger.warning("insight_parsing_empty", content=content)
+            raise ValueError("Parsed insight JSON is empty")
 
         return {
             "insight_report": parsed.get("insight_report", "Analysis completed."),
             "executive_summary": parsed.get("executive_summary", "See detailed report."),
         }
-    except Exception:
+    except Exception as e:
+        logger.error("insight_generation_failed", error=str(e), content=content if 'content' in locals() else None)
         return {
-            "insight_report": "Analysis was performed but insight generation encountered an error.",
+            "insight_report": f"Analysis was performed but insight generation encountered an error: {str(e)[:100]}",
             "executive_summary": "Results are available in chart form.",
         }
+
+
+def _parse_json(content: Any) -> Dict[str, Any]:
+    """Ultra-resilient JSON parser for Llama-3/Groq responses."""
+    if not isinstance(content, str) or not content.strip():
+        return {}
+
+    content = content.strip()
+    
+    # 1. Be aggressive: look for the first { and last } regardless of blocks
+    start_idx = content.find('{')
+    end_idx = content.rfind('}')
+    
+    if start_idx == -1 or end_idx == -1:
+        return {}
+
+    json_str = content[start_idx : end_idx + 1]
+
+    # 2. Try standard load
+    try:
+        return json.loads(json_str)
+    except json.JSONDecodeError:
+        pass
+
+    # 3. Clean common issues and try again
+    try:
+        # Handle trailing commas before closing brackets
+        cleaned = re.sub(r',\s*([\]}])', r'\1', json_str)
+        # Handle control characters
+        cleaned = re.sub(r'[\x00-\x1F\x7F]', '', cleaned)
+        return json.loads(cleaned)
+    except Exception:
+        pass
+
+    return {}
+    return {}

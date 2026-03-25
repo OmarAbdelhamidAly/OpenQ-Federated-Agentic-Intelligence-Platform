@@ -14,9 +14,29 @@ services:
       POSTGRES_PASSWORD: postgres
     ports: ["5433:5432"]
     volumes: [pgdata:/var/lib/postgresql/data]
+    networks: [backend-net]
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 1G
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres -d analyst_agent"]
       interval: 10s
+
+  postgres-init-extra-db:
+    image: postgres:16-alpine
+    container_name: analyst-postgres-init
+    restart: "no"
+    depends_on:
+      postgres: { condition: service_healthy }
+    networks: [backend-net]
+    environment:
+      PGPASSWORD: postgres
+    command: >
+      sh -c "
+      psql -h postgres -U postgres -tc \"SELECT 1 FROM pg_database WHERE datname = 'superset_meta'\" | grep -q 1 || psql -h postgres -U postgres -c \"CREATE DATABASE superset_meta\"
+      "
 
   # ── Redis (Message Broker & Cache) ──────────────────────────
   redis:
@@ -25,6 +45,12 @@ services:
     restart: unless-stopped
     ports: ["6379:6379"]
     volumes: [redisdata:/data]
+    networks: [backend-net]
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
@@ -36,17 +62,28 @@ services:
     restart: unless-stopped
     ports: ["6333:6333", "6334:6334"]
     volumes: [qdrantdata:/qdrant/storage]
+    networks: [backend-net]
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 2G
 
-  # ── Ollama (Local LLM Engine - Disabled for Memory) ───────────
-  # ollama:
-  #   image: ollama/ollama:latest
-  #   container_name: analyst-ollama
-  #   restart: unless-stopped
-  #   ports: ["11434:11434"]
-  #   volumes: [ollamadata:/root/.ollama]
-  #   healthcheck:
-  #     test: ["CMD", "curl", "-f", "http://localhost:11434"]
-  #     interval: 10s
+  # ── Ollama (Local LLM Backend) ─────────────────────────────
+  ollama:
+    image: ollama/ollama:latest
+    container_name: analyst-ollama
+    restart: unless-stopped
+    volumes: [ollamadata:/root/.ollama]
+    networks: [backend-net]
+    # If GPU is available, uncomment the following:
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: 1
+    #           capabilities: [gpu]
 
   # ── API Gateway (Entry Point) ───────────────────────────────
   api:
@@ -54,13 +91,23 @@ services:
     container_name: analyst-api
     restart: unless-stopped
     ports: ["8002:8000"]
-    env_file: [./services/api/.env]
+    env_file: [.env]
     environment:
       DATABASE_URL: postgresql+asyncpg://postgres:postgres@postgres:5432/analyst_agent
       REDIS_URL: redis://redis:6379/0
       OLLAMA_BASE_URL: http://ollama:11434
+      SUPERSET_URL: http://superset:8088
+      SUPERSET_PUBLIC_URL: http://localhost:8088
     volumes:
       - tenant_uploads:/tmp/tenants
+      - ./services/api:/app
+    networks: [frontend-net, backend-net]
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1"]
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 2G
     depends_on:
       postgres: { condition: service_healthy }
       redis: { condition: service_healthy }
@@ -70,85 +117,262 @@ services:
     build: { context: ./services/governance, dockerfile: Dockerfile.worker }
     container_name: analyst-governance
     restart: unless-stopped
-    env_file: [./services/governance/.env]
+    env_file: [.env]
     environment:
       DATABASE_URL: postgresql+asyncpg://postgres:postgres@postgres:5432/analyst_agent
       REDIS_URL: redis://redis:6379/0
+      OLLAMA_BASE_URL: http://ollama:11434
     volumes:
       - tenant_uploads:/tmp/tenants
-    command: ["celery", "-A", "app.worker", "worker", "-Q", "governance", "--loglevel=info", "--concurrency=2"]
-    depends_on: [redis, postgres]
+      - ./services/governance:/app
+    networks: [backend-net]
+    command: ["celery", "-A", "app.worker", "worker", "-Q", "governance,celery", "--loglevel=info", "--concurrency=2"]
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 1G
+    depends_on: [redis, postgres, ollama]
 
   # ── Layer 3: The 4 Execution Pillars ────────────────────────
-
   worker-sql:
     build: { context: ./services/worker-sql, dockerfile: Dockerfile.worker }
     container_name: analyst-worker-sql
     restart: unless-stopped
-    env_file: [./services/worker-sql/.env]
+    env_file: [.env]
     environment:
       DATABASE_URL: postgresql+asyncpg://postgres:postgres@postgres:5432/analyst_agent
       REDIS_URL: redis://redis:6379/0
+      OLLAMA_BASE_URL: http://ollama:11434
+      SQLITE_BASE_DIR: /tmp/tenants
     volumes:
       - tenant_uploads:/tmp/tenants
+      - ./services/worker-sql:/app
+    networks: [backend-net]
     command: ["celery", "-A", "app.worker", "worker", "-Q", "pillar.sql,pillar.sqlite,pillar.postgresql", "--loglevel=info", "--concurrency=4"]
-    depends_on: [redis, postgres]
+    deploy:
+      resources:
+        limits:
+          cpus: '1.5'
+          memory: 2G
+    depends_on: [redis, postgres, ollama]
 
   worker-csv:
     build: { context: ./services/worker-csv, dockerfile: Dockerfile.worker }
     container_name: analyst-worker-csv
     restart: unless-stopped
-    env_file: [./services/worker-csv/.env]
+    env_file: [.env]
     environment:
       DATABASE_URL: postgresql+asyncpg://postgres:postgres@postgres:5432/analyst_agent
       REDIS_URL: redis://redis:6379/0
+      OLLAMA_BASE_URL: http://ollama:11434
     volumes:
       - tenant_uploads:/tmp/tenants
+      - ./services/worker-csv:/app
+    networks: [backend-net]
     command: ["celery", "-A", "app.worker", "worker", "-Q", "pillar.csv", "--loglevel=info", "--concurrency=4"]
-    depends_on: [redis]
+    deploy:
+      resources:
+        limits:
+          cpus: '1.5'
+          memory: 2G
+    depends_on: [redis, ollama]
 
   worker-json:
     build: { context: ./services/worker-json, dockerfile: Dockerfile.worker }
     container_name: analyst-worker-json
     restart: unless-stopped
-    env_file: [./services/worker-json/.env]
+    env_file: [.env]
     environment:
       DATABASE_URL: postgresql+asyncpg://postgres:postgres@postgres:5432/analyst_agent
       REDIS_URL: redis://redis:6379/0
+      OLLAMA_BASE_URL: http://ollama:11434
+      MONGO_URI: mongodb://mongodb:27017
     volumes:
       - tenant_uploads:/tmp/tenants
+      - ./services/worker-json:/app
+    networks: [backend-net]
     command: ["celery", "-A", "app.worker", "worker", "-Q", "pillar.json", "--loglevel=info", "--concurrency=4"]
-    depends_on: [redis, postgres]
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 1.5G
+    depends_on: [redis, postgres, mongodb, ollama]
+
+  mongodb:
+    image: mongo:7
+    container_name: analyst-mongodb
+    restart: unless-stopped
+    ports: ["27017:27017"]
+    volumes: [mongodata:/data/db]
+    networks: [backend-net]
 
   worker-pdf:
     build: { context: ./services/worker-pdf, dockerfile: Dockerfile.worker }
     container_name: analyst-worker-pdf
     restart: unless-stopped
-    env_file: [./services/worker-pdf/.env]
+    env_file: [.env]
     environment:
       DATABASE_URL: postgresql+asyncpg://postgres:postgres@postgres:5432/analyst_agent
       REDIS_URL: redis://redis:6379/0
+      OLLAMA_BASE_URL: http://ollama:11434
+      HF_HOME: /app/hf_cache
     volumes:
       - tenant_uploads:/tmp/tenants
-    command: ["celery", "-A", "app.worker", "worker", "-Q", "pillar.pdf", "--loglevel=info", "--concurrency=4"]
-    depends_on: [redis, postgres]
+      - ./services/worker-pdf:/app
+      - hf_cache:/app/hf_cache
+    networks: [backend-net]
+    command: ["celery", "-A", "app.worker", "worker", "-Q", "pillar.pdf,knowledge", "--loglevel=info", "--concurrency=1"]
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 8G
+    depends_on: [redis, postgres, ollama, qdrant]
 
   # ── Layer 4: Export Service ─────────────────────────────────
   exporter:
     build: { context: ./services/exporter, dockerfile: Dockerfile.worker }
     container_name: analyst-exporter
     restart: unless-stopped
-    env_file: [./services/exporter/.env]
+    env_file: [.env]
     environment:
       REDIS_URL: redis://redis:6379/0
     volumes:
       - tenant_uploads:/tmp/tenants
+      - ./services/exporter:/app
+    networks: [backend-net]
     command: ["celery", "-A", "app.worker", "worker", "-Q", "export", "--loglevel=info", "--concurrency=2"]
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 1G
     depends_on: [redis]
 
+  # ── Celery Monitoring (Flower) ──────────────────────────────
+  flower:
+    image: mher/flower:latest
+    container_name: analyst-flower
+    restart: unless-stopped
+    ports: ["5555:5555"]
+    environment:
+      CELERY_BROKER_URL: redis://redis:6379/0
+    networks: [frontend-net, backend-net]
+    depends_on: [redis]
+
+  # ══════════════════════════════════════════════════════════════
+  #  Observability Stack (Grafana + Prometheus)
+  # ══════════════════════════════════════════════════════════════
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: analyst-prometheus
+    restart: unless-stopped
+    ports: ["9090:9090"]
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheusdata:/prometheus
+    networks: [backend-net]
+    command: ["--config.file=/etc/prometheus/prometheus.yml", "--storage.tsdb.path=/prometheus"]
+    depends_on: [redis-exporter]
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: analyst-grafana
+    restart: unless-stopped
+    ports: ["3000:3000"]
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin
+    volumes:
+      - grafanadata:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+    networks: [frontend-net, backend-net]
+    depends_on: [prometheus]
+
+  redis-exporter:
+    image: oliver006/redis_exporter:latest
+    container_name: analyst-redis-exporter
+    restart: unless-stopped
+    environment:
+      REDIS_ADDR: redis://redis:6379
+    networks: [backend-net]
+    depends_on:
+      redis: { condition: service_healthy }
+
+  # ══════════════════════════════════════════════════════════════
+  #  Analytics (Apache Superset)
+  # ══════════════════════════════════════════════════════════════
+  superset:
+    build: { context: ./superset, dockerfile: Dockerfile }
+    container_name: analyst-superset
+    restart: unless-stopped
+    ports: ["8088:8088"]
+    environment:
+      SUPERSET_SECRET_KEY: analyst-superset-secret-change-in-prod
+      SUPERSET_DB_URI: postgresql+psycopg2://postgres:postgres@postgres:5432/superset_meta
+    volumes:
+      - supersetdata:/app/superset_home
+      - ./superset/superset_config.py:/app/pythonpath/superset_config.py:ro
+      - tenant_uploads:/tmp/tenants:ro
+    networks: [frontend-net, backend-net]
+    depends_on:
+      postgres: { condition: service_healthy }
+      postgres-init-extra-db: { condition: service_completed_successfully }
+
+  superset-init:
+    build: { context: ./superset, dockerfile: Dockerfile }
+    container_name: analyst-superset-init
+    restart: "no"
+    environment:
+      SUPERSET_DB_URI: postgresql+psycopg2://postgres:postgres@postgres:5432/superset_meta
+    volumes:
+      - ./superset/superset_config.py:/app/pythonpath/superset_config.py:ro
+    networks: [backend-net]
+    command: >
+      bash -c "
+        superset db upgrade &&
+        superset fab create-admin --username admin --firstname Admin --lastname User --email admin@analyst.ai --password admin || true &&
+        superset init
+      "
+    depends_on:
+      postgres: { condition: service_healthy }
+      postgres-init-extra-db: { condition: service_completed_successfully }
+
+  # ── Adminer (Database Web UI) ────────────────────────────────
+  adminer:
+    image: adminer:latest
+    container_name: analyst-adminer
+    restart: unless-stopped
+    ports: ["8081:8080"]
+    networks: [frontend-net, backend-net]
+    depends_on: [postgres]
+
+  # ── 5. Frontend (React/Vite) ────────────────────────────────
+  frontend:
+    build: { context: ./frontend, dockerfile: Dockerfile }
+    container_name: analyst-frontend
+    restart: unless-stopped
+    ports: ["3001:80"]
+    networks: [frontend-net]
+    depends_on:
+      api: { condition: service_started }
+
+networks:
+  frontend-net:
+    driver: bridge
+  backend-net:
+    driver: bridge
+
 volumes:
-  pgdata: { driver: local }
-  redisdata: { driver: local }
-  qdrantdata: { driver: local }
-  ollamadata: { driver: local }
-  tenant_uploads: { driver: local }
+  pgdata:
+  redisdata:
+  qdrantdata:
+  ollamadata:
+  tenant_uploads:
+  hf_cache:
+  prometheusdata:
+  grafanadata:
+  supersetdata:
+  mongodata:

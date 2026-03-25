@@ -1,24 +1,23 @@
-"""PDF Pipeline — Advanced Visual RAG with ColPali.
+"""PDF Pipeline — 3-Way Architecture Router.
 
-colpali_retrieval → output_assembler → END
+Segments requests based on `extraction_mode` to the respective isolated flow:
+  - 'fast_text': Text only, high speed.
+  - 'deep_vision': Full VLM multi-vector analysis, highest quality.
+  - 'hybrid_ocr': Smart text + selective OCR, balanced layout.
 """
-from typing import Any, Dict
-from langgraph.graph import END, StateGraph, START
-from app.domain.analysis.entities import AnalysisState
-from app.modules.shared.agents.output_assembler import output_assembler
-from app.modules.pdf.agents.pdf_agent import colpali_retrieval_agent
+from typing import Any
 
-def build_pdf_graph(checkpointer: Any = None) -> Any:
-    """Construct an advanced PDF analysis pipeline using ColPali retrieval."""
-    graph = StateGraph(AnalysisState)
-
-    # Add nodes
-    graph.add_node("colpali_retrieval", colpali_retrieval_agent)
-    graph.add_node("output_assembler", output_assembler)
-
-    # Setup flow
-    graph.add_edge(START, "colpali_retrieval")
-    graph.add_edge("colpali_retrieval", "output_assembler")
-    graph.add_edge("output_assembler", END)
-
-    return graph.compile(checkpointer=checkpointer)
+def build_pdf_graph(checkpointer: Any = None, mode: str = "deep_vision") -> Any:
+    """Route construction to the appropriate isolated PDF workflow."""
+    
+    if mode == "fast_text":
+        from app.modules.pdf.flows.fast_text.workflow import build_fast_text_graph
+        return build_fast_text_graph(checkpointer=checkpointer)
+        
+    elif mode == "hybrid_ocr":
+        from app.modules.pdf.flows.hybrid_ocr.workflow import build_hybrid_ocr_graph
+        return build_hybrid_ocr_graph(checkpointer=checkpointer)
+        
+    else:  # default to deep_vision
+        from app.modules.pdf.flows.deep_vision.workflow import build_deep_vision_graph
+        return build_deep_vision_graph(checkpointer=checkpointer)

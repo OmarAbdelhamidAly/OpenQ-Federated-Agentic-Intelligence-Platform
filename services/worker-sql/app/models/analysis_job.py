@@ -58,6 +58,15 @@ class AnalysisJob(Base):
     )
     complexity_index: Mapped[int] = mapped_column(Integer, default=1)
     total_pills: Mapped[int] = mapped_column(Integer, default=1)
+    
+    # ── Vision 2026: Multi-Agentic Orchestration ───────────────
+    required_pillars: Mapped[Optional[list[str]]] = mapped_column(
+        JSON, nullable=True
+    )  # e.g. ["sql", "pdf"]
+    synthesis_report: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    multi_source_ids: Mapped[Optional[list[uuid.UUID]]] = mapped_column(
+        JSON, nullable=True
+    )
 
     # Relationships
     tenant = relationship("Tenant", back_populates="analysis_jobs")

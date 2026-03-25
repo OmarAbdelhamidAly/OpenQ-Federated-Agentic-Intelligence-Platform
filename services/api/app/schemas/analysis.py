@@ -16,6 +16,8 @@ class AnalysisQueryRequest(BaseModel):
     kb_id: Optional[uuid.UUID] = None
     complexity_index: int = Field(default=1, ge=1)
     total_pills: int = Field(default=1, ge=1)
+    multi_source_ids: Optional[List[uuid.UUID]] = None
+    chat_history: Optional[List[Dict[str, str]]] = None
 
 
 class AnalysisJobResponse(BaseModel):
@@ -24,6 +26,7 @@ class AnalysisJobResponse(BaseModel):
     tenant_id: uuid.UUID
     user_id: uuid.UUID
     source_id: uuid.UUID
+    source_type: Optional[str] = None
     question: str
     intent: Optional[str] = None
     status: str
@@ -34,6 +37,9 @@ class AnalysisJobResponse(BaseModel):
     generated_sql: Optional[str] = None
     error_message: Optional[str] = None
     thinking_steps: Optional[List[Dict[str, Any]]] = None
+    multi_source_ids: Optional[List[uuid.UUID]] = None
+    required_pillars: Optional[List[str]] = None
+    synthesis_report: Optional[str] = None
 
     model_config = {"from_attributes": True}
 
@@ -50,10 +56,13 @@ class AnalysisResultResponse(BaseModel):
     """Full analysis result — always contains all 5 fields."""
     job_id: uuid.UUID
     chart_json: Optional[Dict[str, Any]] = None
+    chart_engine: Optional[str] = "echarts"
     insight_report: Optional[str] = None
     executive_summary: Optional[str] = None
     recommendations: Optional[List[RecommendationItem]] = None
     follow_up_suggestions: Optional[List[str]] = None
+    visual_context: Optional[List[Dict[str, Any]]] = None
+    generated_sql: Optional[str] = None
 
     model_config = {"from_attributes": True}
 

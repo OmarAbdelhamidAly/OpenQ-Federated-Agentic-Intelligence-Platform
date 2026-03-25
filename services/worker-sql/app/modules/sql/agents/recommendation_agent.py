@@ -1,6 +1,6 @@
 """SQL Pipeline — Recommendation Agent.
 
-Generates actionable recommendations and follow-up questions from SQL analysis results.
+Generates follow-up suggestions and recommendations based on analysis.
 Source-agnostic logic — identical to the CSV version, both kept
 separate so each pipeline folder is self-contained.
 """
@@ -8,95 +8,140 @@ separate so each pipeline folder is self-contained.
 from __future__ import annotations
 
 import json
-from typing import Any, Dict
+import re
+import structlog
+from typing import Any, Dict, List
+
+logger = structlog.get_logger(__name__)
 
 from app.infrastructure.llm import get_llm
-
 from app.domain.analysis.entities import AnalysisState
 from app.infrastructure.config import settings
 
-REC_PROMPT = """You are a strategic business advisor. Based on the analysis results and insights,
-generate actionable recommendations.
+# Prompt synchronized with services/api/app/schemas/analysis.py -> RecommendationItem
+REC_PROMPT = """You are a senior business consultant. Based on the data analysis results, 
+provide strategic recommendations and follow-up data questions.
 
-Provide exactly:
-1. **recommendations**: A list of 2-3 items, each containing:
-   - action: What to do (specific, actionable)
-   - expected_impact: What will happen if they do it (quantify if possible)
-   - confidence_score: 0-100 (how confident you are)
-   - main_risk: What could go wrong
-
-2. **follow_up_suggestions**: A list of 2-3 related questions the user can ask next
-   to dig deeper into this analysis.
-
-Respond in JSON format:
+Provide your response in the following STRICT JSON format:
 {{
   "recommendations": [
     {{
-      "action": "...",
-      "expected_impact": "...",
-      "confidence_score": 80,
-      "main_risk": "..."
+      "action": "Short title or title of the action to take",
+      "expected_impact": "Detailed description of the expected business impact",
+      "confidence_score": 85,
+      "main_risk": "Primary risk or dependency"
     }}
   ],
   "follow_up_suggestions": [
-    "What is the trend over the last 6 months?",
-    "Which segment shows the highest growth?"
+    "Question starting with 'Why did...'",
+    "Question starting with 'What if...'"
   ]
 }}
 
-Question: {question}
-Insight Report: {insight}
-Executive Summary: {summary}
+STRICT JSON format only. NO PREAMBLE. NO post-explanation.
+The "confidence_score" MUST be an integer between 0 and 100.
 
-{complexity_instruction}"""
+Analysis Results: {analysis}
+User Question: {question}"""
 
 
 async def recommendation_agent(state: AnalysisState) -> Dict[str, Any]:
-    """Generate recommendations and follow-up questions from SQL analysis."""
-    llm = get_llm(temperature=0.3)
+    """Generate follow-up recommendations based on analysis results."""
+    analysis = state.get("analysis_results") or {}
+    if not analysis:
+        return {"recommendations": [], "follow_up_suggestions": []}
 
-    # Calculate complexity instructions (Idea: Strategic depth)
-    idx = state.get("complexity_index", 1)
-    tot = state.get("total_pills", 1)
-    
-    complexity_instruction = ""
-    if tot > 1:
-        if idx == 1:
-            complexity_instruction = "STRATEGY: Tactical & Immediate. Recommendations should focus on quick fixes, data cleaning, or immediate operational adjustments."
-        elif idx == tot:
-            complexity_instruction = f"STRATEGY: Visionary & High-Level. This is the master recommendation (level {idx}). Focus on long-term strategy, market positioning, or structural organizational changes."
-        else:
-            complexity_instruction = f"STRATEGY: Analytical & Mid-term. Recommendations should focus on process optimization, resource allocation, or platform enhancements."
+    llm = get_llm(temperature=0)
 
     prompt = REC_PROMPT.format(
-        question=state.get("question") or "",
-        insight=state.get("insight_report") or "",
-        summary=state.get("executive_summary") or "",
-        complexity_instruction=complexity_instruction
+        analysis=json.dumps(analysis.get("data", [])[:15]),
+        question=state.get("question", ""),
     )
 
     try:
-        response = await llm.ainvoke(prompt)
-        content = response.content
+        res = await llm.ainvoke(prompt)
+        content = res.content
+        
+        parsed = _parse_json(content)
+        
+        if not parsed:
+            logger.warning("recommendation_parsing_failed", content=content)
+            return {
+                "recommendations": [
+                    {
+                        "action": "Further Analysis Recommended",
+                        "expected_impact": "Examine the trends shown in the chart for deeper operational insights.",
+                        "confidence_score": 70,
+                        "main_risk": "Data granularity may limit specific conclusions."
+                    }
+                ],
+                "follow_up_suggestions": [
+                    "What are the primary drivers of the observed trends?",
+                    "How do these results compare to previous periods?"
+                ]
+            }
 
-        if isinstance(content, str):
-            content = content.strip()
-            if content.startswith("```"):
-                content = content.split("\n", 1)[1]
-                content = content.rsplit("```", 1)[0]
-            parsed = json.loads(content)
-        else:
-            parsed = {}
+        # Filter the recommendations to ensure they match the schema even if LLM added extra fields
+        recommendations = []
+        for rec in parsed.get("recommendations", []):
+            if isinstance(rec, dict):
+                recommendations.append({
+                    "action": str(rec.get("action") or rec.get("title", "Recommended Action")),
+                    "expected_impact": str(rec.get("expected_impact") or rec.get("description", "Positive business impact.")),
+                    "confidence_score": int(rec.get("confidence_score") if isinstance(rec.get("confidence_score"), (int, float)) else 80),
+                    "main_risk": str(rec.get("main_risk") or "None identified.")
+                })
 
         return {
-            "recommendations": parsed.get("recommendations", []),
+            "recommendations": recommendations,
             "follow_up_suggestions": parsed.get("follow_up_suggestions", []),
         }
-    except Exception:
+
+    except Exception as e:
+        logger.error("recommendation_generation_failed", error=str(e))
         return {
-            "recommendations": [],
+            "recommendations": [
+                {
+                    "action": "Manual Insight Required",
+                    "expected_impact": "Recommendations could not be auto-generated for this specific data slice.",
+                    "confidence_score": 50,
+                    "main_risk": "Technical error during generation."
+                }
+            ],
             "follow_up_suggestions": [
-                "Can you break this down by time period?",
-                "Which category contributes the most?",
+                "Review raw data for anomalies.",
+                "Consult with domain experts on these findings."
             ],
         }
+
+
+def _parse_json(content: Any) -> Dict[str, Any]:
+    """Ultra-resilient JSON parser for Llama-3/Groq responses."""
+    if not isinstance(content, str) or not content.strip():
+        return {}
+
+    content = content.strip()
+    
+    # Standardized: look for the first { and last } regardless of blocks
+    start_idx = content.find('{')
+    end_idx = content.rfind('}')
+    
+    if start_idx == -1 or end_idx == -1:
+        return {}
+
+    json_str = content[start_idx : end_idx + 1]
+
+    try:
+        return json.loads(json_str)
+    except json.JSONDecodeError:
+        pass
+
+    try:
+        # Standardized cleanup for trailing commas and control chars
+        cleaned = re.sub(r',\s*([\]}])', r'\1', json_str)
+        cleaned = re.sub(r'[\x00-\x1F\x7F]', '', cleaned)
+        return json.loads(cleaned)
+    except Exception:
+        pass
+
+    return {}

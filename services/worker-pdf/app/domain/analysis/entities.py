@@ -71,6 +71,7 @@ class AnalysisState(TypedDict, total=False):
     # ── Insight Agent Output ──────────────────────────────────
     insight_report: Optional[str]
     executive_summary: Optional[str]
+    visual_context: Optional[List[Dict[str, Any]]]
 
     # ── Recommendation Agent Output ───────────────────────────
     recommendations: Annotated[Optional[List[Dict[str, Any]]], safe_append]

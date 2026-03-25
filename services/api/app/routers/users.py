@@ -9,6 +9,7 @@ import structlog
 from fastapi import APIRouter, Body, Depends, HTTPException, Response, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.infrastructure.database.postgres import get_db
 from app.infrastructure.api_dependencies import get_current_user, require_admin
@@ -22,13 +23,16 @@ router = APIRouter(prefix="/api/v1/users", tags=["users"])
 
 @router.get("", response_model=UserListResponse)
 async def list_users(
-    admin: Annotated[User, Depends(require_admin)],
+    current_user: Annotated[User, Depends(require_admin)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> UserListResponse:
     """List all users in the tenant (admin only)."""
-    result = await db.execute(
-        select(User).where(User.tenant_id == admin.tenant_id)
+    stmt = (
+        select(User)
+        .where(User.tenant_id == current_user.tenant_id)
+        .options(selectinload(User.tenant), selectinload(User.group))
     )
+    result = await db.execute(stmt)
     users = result.scalars().all()
     return UserListResponse(users=[UserResponse.model_validate(u) for u in users])
 
@@ -39,30 +43,41 @@ async def list_users(
     status_code=status.HTTP_201_CREATED,
 )
 async def invite_user(
-    body: Annotated[InviteUserRequest, Body()],
-    admin: Annotated[User, Depends(require_admin)],
+    request: Annotated[InviteUserRequest, Body()],
+    current_user: Annotated[User, Depends(require_admin)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> UserResponse:
     """Invite a new user to the tenant (admin only)."""
 
     # Check duplicate email
-    existing = await db.execute(select(User).where(User.email == body.email))
+    existing = await db.execute(
+        select(User)
+        .where(User.email == request.email)
+        .options(selectinload(User.tenant))
+    )
     if existing.scalar_one_or_none():
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="Email already registered",
         )
 
-    user = User(
+    new_user = User(
         id=uuid.uuid4(),
-        tenant_id=admin.tenant_id,
-        email=body.email,
-        password_hash=hash_password(body.password),
-        role=body.role,
+        tenant_id=current_user.tenant_id,
+        group_id=request.group_id,
+        email=request.email,
+        password_hash=hash_password(request.password),
+        role=request.role,
     )
-    db.add(user)
+    db.add(new_user)
     await db.flush()
-    await db.refresh(user)
+    # Eagerly load tenant after insert for response
+    result = await db.execute(
+        select(User)
+        .where(User.id == user.id)
+        .options(selectinload(User.tenant))
+    )
+    user = result.scalar_one()
 
     logger.info(
         "user_invited",

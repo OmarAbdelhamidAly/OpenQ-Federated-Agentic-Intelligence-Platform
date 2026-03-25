@@ -92,8 +92,12 @@ def run_pandas_query(
     if top_n:
         result = result.head(top_n)
 
+    import json
+    # Convert through JSON to handle numpy scalars (like float64, nan)
+    clean_data = json.loads(result.to_json(orient="records"))
+    
     return {
-        "data": result.to_dict(orient="records"),
+        "data": clean_data,
         "columns": list(result.columns),
         "row_count": len(result),
     }

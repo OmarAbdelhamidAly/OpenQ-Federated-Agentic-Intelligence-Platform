@@ -1,123 +1,226 @@
 """SQL Pipeline — Visualization Agent.
 
-Generates Plotly chart JSON based on SQL analysis results.
-Source-agnostic logic — identical to the CSV version, both kept
-separate so each pipeline folder is self-contained.
+Generates Superset Datasets, Charts, and Dashboards dynamically.
 """
 
 from __future__ import annotations
 
 import json
+import re
+import uuid
+import structlog
 from typing import Any, Dict
 
+logger = structlog.get_logger(__name__)
+
 from app.infrastructure.llm import get_llm
-
 from app.domain.analysis.entities import AnalysisState
-from app.infrastructure.config import settings
+from app.modules.sql.tools.superset_client import (
+    get_superset_client,
+    get_or_create_database,
+    create_virtual_dataset,
+    create_chart,
+    create_dashboard
+)
+from app.modules.sql.tools.load_data_source import get_connection_string
 
-VIZ_PROMPT = """You are a data visualization expert. Based on the analysis results and intent,
-create a Plotly chart specification as JSON.
+SUPERSET_VIZ_PROMPT = """You are a Principal Data Scientist and Lead Visualization Architect.
+Your core directive is to automatically configure premium, highly-insightful Apache Superset dashboards.
 
-Chart selection rules:
-- trend over time → line chart (type: "scatter", mode: "lines")
-- comparison by category → bar chart (type: "bar")
-- correlation 2 metrics → scatter plot (type: "scatter", mode: "markers")
-- part-to-whole → pie chart (type: "pie")
-- value distribution → histogram (type: "histogram")
-- correlation matrix → heatmap (type: "heatmap")
+### CHART INTELLIGENCE & SELECTION HEURISTICS
+You have access to 10 distinguished Superset visualization archetypes. You MUST choose the single MOST statistically powerful chart to answer the user's question, applying these rules:
+- **Time-Series / Trends**: Use Line or Area charts if the primary dimension is time/dates.
+- **Categorical Comparisons**: Use Bar charts for 3-12 categories. Use Treemap for massive categorical segments.
+- **Part-to-Whole / Hierarchies**: Use Pie (max 5 slices), or Sunburst if multiple hierarchical text columns exist.
+- **Outliers & Correlations**: Use Bubble charts when comparing 3 continuous numeric metrics simultaneously.
+- **Executive KPI**: Use Big Number when the answer is a single definitive total or an aggregate score.
+- **Raw Data / Drill-Down**: Use Table ONLY if the user explicitly asks for a list, dump, or if no chart fits.
 
-CRITICAL STYLING REQUIREMENTS:
-The application uses a dark glassmorphism UI. You MUST include these properties in the `layout` to match:
-- `paper_bgcolor: "rgba(0,0,0,0)"` (fully transparent)
-- `plot_bgcolor: "rgba(0,0,0,0)"` (fully transparent)
-- `font: {{ "color": "#F1F5F9" }}` (light text)
-- `margin: {{ "t": 40, "b": 40, "l": 40, "r": 20 }}`
+### THE 10 SUPERSET SCHEMAS
+You MUST output a strict JSON object containing TWO keys: "viz_type" and "params".
+The "viz_type" must be one of the identifiers below, and the "params" must match its exact schema.
+Example: {{ "viz_type": "pie", "params": {{ "metric": "revenue", "groupby": ["region"] }} }}
+Field definitions:
+- "metrics" (list): Requires an array of numeric column names (e.g. ["revenue"]).
+- "metric" (string): Requires a single numeric column name (e.g. "revenue").
+- "groupby" (list): Requires an array of categorical/text column names.
 
-Respond with a valid Plotly JSON figure with "data" and "layout" keys.
-Use professional, vibrant colors like #6366f1, #ec4899, #14b8a6. Include title, axis labels, and hover info.
+47. "echarts_timeseries_bar" (Vertical Bar Chart)
+   - params: {{ "metrics": ["<num>"], "groupby": ["<cat>"], "x_axis": "<cat>" }}
+48. "echarts_timeseries_line" (Line Chart)
+   - params: {{ "metrics": ["<num>"], "groupby": [], "x_axis": "<time_or_cat_col>" }}
+49. "echarts_area" (Stacked Area Chart - great for cumulative trends)
+   - params: {{ "metrics": ["<num>"], "groupby": ["<cat>"], "x_axis": "<time_or_cat_col>" }}
+50. "pie" (Standard/Donut Pie Chart)
+   - params: {{ "metric": "<num>", "groupby": ["<cat>"] }}
+51. "table" (Data Table)
+   - params: {{ "metrics": [], "groupby": [], "all_columns": ["<col1>", "<col2>", "<col3>"] }}
+52. "big_number_total" (Executive KPI Indicator)
+   - params: {{ "metric": "<num>" }}
+53. "treemap_v2" (Nested Treemap - great for market share)
+   - params: {{ "metrics": ["<num>"], "groupby": ["<cat1>", "<cat2>"] }}
+54. "sunburst_v2" (Sunburst Hierarchy)
+   - params: {{ "metric": "<num>", "groupby": ["<cat1>", "<cat2>"] }}
+55. "radar" (Radar / Spider Chart - great for profiling entities)
+   - params: {{ "metrics": ["<num1>", "<num2>"], "groupby": ["<cat_entity>"] }}
+56. "bubble" (Bubble Scatter Plot)
+   - params: {{ "entity": "<cat>", "x": "<num1>", "y": "<num2>", "size": "<num3>" }}
 
+### EXECUTION DIRECTIVES
+- NEVER fabricate column names. The `metrics` or `groupby` MUST correspond verbatim to the Schema/Columns provided below.
+- Add `"color_scheme": "supersetColors"` inside `"params"` to ensure vibrant and professional chart colors.
+- Return ONLY a valid JSON object.
+- NO markdown formatting (no ```json). NO explanation. NO preamble.
+
+**Query Result Summary**:
 Intent: {intent}
-Question: {question}
-Data columns: {columns}
-Sample data (first 10 rows): {data}"""
-
+User Question: {question}
+SQL Query: {sql}
+Schema/Columns: {columns}
+Stochastic Data Sample: {data}
+"""
 
 async def visualization_agent(state: AnalysisState) -> Dict[str, Any]:
-    """Generate a Plotly chart JSON from SQL analysis results."""
+    """Generate a Superset Chart and Dashboard dynamically."""
     analysis = state.get("analysis_results") or {}
     if not analysis or not analysis.get("data"):
         return {"chart_json": None}
 
     llm = get_llm(temperature=0)
-
     data_sample = analysis["data"][:10]
-    prompt = VIZ_PROMPT.format(
+    
+    prompt = SUPERSET_VIZ_PROMPT.format(
         intent=state.get("intent", "comparison"),
         question=state.get("question", ""),
+        sql=state.get("generated_sql", ""),
         columns=json.dumps(analysis.get("columns", [])),
         data=json.dumps(data_sample, indent=2, default=str),
     )
 
+    content = None
     try:
         response = await llm.ainvoke(prompt)
         content = response.content
+        chart_config = _parse_json(content)
 
-        if isinstance(content, str):
-            content = content.strip()
-            if content.startswith("```"):
-                content = content.split("\n", 1)[1]
-                content = content.rsplit("```", 1)[0]
-            chart_json = json.loads(content)
-        else:
-            chart_json = None
-
-        return {"chart_json": chart_json}
-    except Exception:
-        # Fallback: robust multi-strategy generation
-        data = analysis["data"]
-        columns = analysis.get("columns", [])
+        if not chart_config or "viz_type" not in chart_config or "params" not in chart_config:
+            logger.warning("invalid_superset_config", content=content)
+            chart_config = {
+                "viz_type": "table",
+                "params": {"all_columns": analysis.get("columns", [])}
+            }
         
-        if not columns or not data:
-            return {"chart_json": None}
-
-        # Strategy A: Multi-column chart (Trend/Bar)
-        if len(columns) >= 2:
-            return {"chart_json": {
-                "data": [{
-                    "type": "bar",
-                    "x": [str(row.get(columns[0], "")) for row in data],
-                    "y": [row.get(columns[1], 0) for row in data],
-                    "marker": {"color": "#6366f1"},
-                }],
-                "layout": {
-                    "title": {"text": state.get("question", "Analysis Results"), "font": {"color": "#F1F5F9"}},
-                    "xaxis": {"title": {"text": columns[0]}, "color": "#F1F5F9"},
-                    "yaxis": {"title": {"text": columns[1]}, "color": "#F1F5F9"},
-                    "paper_bgcolor": "rgba(0,0,0,0)",
-                    "plot_bgcolor": "rgba(0,0,0,0)",
-                    "font": {"color": "#F1F5F9"},
-                    "margin": {"t": 40, "b": 40, "l": 40, "r": 20},
-                },
-            }}
+        # Normalize metrics: Superset virtual datasets need full aggregation objects,
+        # not plain column name strings.
+        chart_config["params"] = _normalize_metrics(chart_config["params"])
+        
+        # Inject vibrant color scheme for premium aesthetics
+        chart_config["params"]["color_scheme"] = "supersetColors"
             
-        # Strategy B: Single-value indicator (e.g. Total Count)
-        if len(columns) == 1:
-            val = data[0].get(columns[0], "N/A")
-            return {"chart_json": {
-                "data": [{
-                    "type": "indicator",
-                    "mode": "number+delta" if isinstance(val, (int, float)) else "number",
-                    "value": val if isinstance(val, (int, float)) else 0,
-                    "title": {"text": columns[0], "font": {"size": 24, "color": "#F1F5F9"}},
-                    "number": {"font": {"size": 64, "color": "#6366f1"}},
-                    "domain": {"x": [0, 1], "y": [0, 1]}
-                }],
-                "layout": {
-                    "paper_bgcolor": "rgba(0,0,0,0)",
-                    "plot_bgcolor": "rgba(0,0,0,0)",
-                    "margin": {"t": 0, "b": 0, "l": 0, "r": 0},
-                    "height": 250
-                }
-            }}
+        # Execute Superset Flow!
+        conn_string = get_connection_string(state)
+        if not conn_string:
+            raise ValueError("No valid connection string found for Superset")
+            
+        chart_engine = "superset"
+        
+        # Connect to Superset API
+        client = await get_superset_client()
+        
+        try:
+            db_name = f"Analytic DB {state.get('source_id')}"
+            db_id = await get_or_create_database(client, db_name, conn_string)
+            
+            # Short UUID for table name
+            ds_id = str(uuid.uuid4())[:8]
+            dataset_id = await create_virtual_dataset(
+                client, 
+                db_id, 
+                sql=state.get("generated_sql"), 
+                table_name=f"dataset_{ds_id}"
+            )
+            # Create Dashboard first (to get ID for linking)
+            dashboard_id, internal_uuid, embedded_uuid = await create_dashboard(client, state.get("question", "Analysis Dashboard")[:250])
 
-        return {"chart_json": None}
+            # Create Chart slice (linking to dashboard)
+            chart_id = await create_chart(
+                client, 
+                dataset_id, 
+                slice_name=state.get("question", "Analysis Chart")[:250], 
+                viz_type=chart_config["viz_type"], 
+                params=chart_config["params"],
+                dashboard_id=dashboard_id
+            )
+            
+            return {
+                "chart_json": {
+                    "embedded_id": embedded_uuid, 
+                    "native_id": dashboard_id,
+                    "internal_uuid": internal_uuid
+                }, 
+                "chart_engine": "superset"
+            }
+            
+        finally:
+            await client.aclose()
+
+    except Exception as e:
+        logger.error("superset_generation_failed", error=str(e), content=content)
+        return {"chart_json": None, "error": f"Superset rendering failed: {e}"}
+
+def _make_metric(col_name: str) -> dict:
+    """Wrap a column name as a Superset SIMPLE aggregation metric object."""
+    return {
+        "expressionType": "SIMPLE",
+        "column": {"column_name": col_name},
+        "aggregate": "SUM",
+        "label": col_name,
+        "hasCustomLabel": False,
+        "optionName": f"metric_{col_name}"
+    }
+
+def _normalize_metrics(params: dict) -> dict:
+    """
+    Convert plain string metrics (e.g. "TrackCount") to Superset-compatible
+    aggregation objects. Virtual datasets don't have pre-defined metrics, so
+    they must be expressed as SIMPLE column aggregations.
+    """
+    if "metrics" in params:
+        normalized = []
+        for m in params["metrics"]:
+            if isinstance(m, str):
+                normalized.append(_make_metric(m))
+            else:
+                normalized.append(m)  # already an object
+        params["metrics"] = normalized
+    
+    if "metric" in params and isinstance(params["metric"], str):
+        params["metric"] = _make_metric(params["metric"])
+    
+    return params
+
+
+def _parse_json(content: Any) -> Dict[str, Any]:
+    """Ultra-resilient JSON parser for LLM responses."""
+    if not isinstance(content, str) or not content.strip():
+        return {}
+    content = content.strip()
+    start_idx = content.find('{')
+    end_idx = content.rfind('}')
+    
+    if start_idx == -1 or end_idx == -1:
+        return {}
+        
+    json_str = content[start_idx : end_idx + 1]
+    try:
+        return json.loads(json_str)
+    except json.JSONDecodeError:
+        pass
+        
+    try:
+        cleaned = re.sub(r',\s*([\]}])', r'\1', json_str)
+        cleaned = re.sub(r'[\x00-\x1F\x7F]', '', cleaned)
+        return json.loads(cleaned)
+    except Exception:
+        pass
+    return {}

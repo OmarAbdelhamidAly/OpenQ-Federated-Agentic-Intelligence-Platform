@@ -1,10 +1,10 @@
 """Router for managing knowledge bases and documents (the 'Contextual Data' RAG component)."""
 
 import uuid
-from typing import Annotated, List
+from typing import Annotated, List, Optional
 
 import structlog
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, status, BackgroundTasks
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, status, BackgroundTasks, Form
 from sqlalchemy import select, delete, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -129,6 +129,7 @@ async def upload_document(
     current_user: Annotated[User, Depends(require_admin)],
     db: Annotated[AsyncSession, Depends(get_db)],
     file: UploadFile = File(...),
+    context_hint: Annotated[Optional[str], Form()] = None,
 ):
     """Upload a document to a knowledge base and trigger indexing."""
     # Verify KB ownership
@@ -143,6 +144,7 @@ async def upload_document(
         kb_id=kb_id,
         name=file.filename,
         file_path=file_path,
+        context_hint=context_hint,
         status="pending"
     )
     db.add(doc)

@@ -4,8 +4,9 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime, timezone
+from typing import Any, Dict, Optional
 
-from sqlalchemy import String, Text, DateTime
+from sqlalchemy import String, Text, DateTime, JSON
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -23,6 +24,13 @@ class Tenant(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
     )
+    company_profile: Mapped[Optional[Dict[str, Any]]] = mapped_column(
+        JSON, nullable=True
+    )  # Industry, location, primary goal, etc.
+
+    branding_config: Mapped[Optional[Dict[str, Any]]] = mapped_column(
+        JSON, nullable=True
+    )  # logo_url, primary_color, system_persona, etc.
 
     # Relationships
     users = relationship("User", back_populates="tenant", cascade="all, delete-orphan")

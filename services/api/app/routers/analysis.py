@@ -11,8 +11,8 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.infrastructure.database.postgres import get_db
-from app.infrastructure.api_dependencies import get_current_user
 from app.models.analysis_job import AnalysisJob
+from app.infrastructure.api_dependencies import get_current_user, verify_permission
 from app.models.analysis_result import AnalysisResult
 from app.models.data_source import DataSource
 from app.models.user import User
@@ -45,7 +45,15 @@ async def submit_query(
     worker queue for async processing by the LangGraph agent pipeline.
     """
 
-    # Verify source belongs to tenant
+    # ── Phase 3: IAM Check ──────
+    await verify_permission("query", str(body.source_id), current_user, db)
+    
+    # Also verify all multi-sources
+    if body.multi_source_ids:
+        for sid in body.multi_source_ids:
+            await verify_permission("query", str(sid), current_user, db)
+
+    # Verify source belongs to tenant (standard check)
     result = await db.execute(
         select(DataSource).where(
             DataSource.id == body.source_id,
@@ -59,12 +67,18 @@ async def submit_query(
             detail="Data source not found",
         )
 
+    import json
+    actual_question = body.question
+    if body.chat_history:
+        actual_question = json.dumps({"text": body.question, "history": body.chat_history})
+
     job = AnalysisJob(
         id=uuid.uuid4(),
         tenant_id=current_user.tenant_id,
         user_id=current_user.id,
         source_id=body.source_id,
-        question=body.question,
+        multi_source_ids=body.multi_source_ids,
+        question=actual_question,
         kb_id=body.kb_id,
         status="pending",
         thinking_steps=[],
@@ -77,8 +91,8 @@ async def submit_query(
 
     # Dispatch to Celery Governance Layer
     try:
-        from app.worker import governance_task
-        governance_task.apply_async(args=[str(job.id)], queue='governance')
+        from app.worker import celery_app
+        celery_app.send_task("governance_task", args=[str(job.id)], queue='governance')
     except Exception:
         # If Celery is not available, the job stays pending.
         # This is acceptable for MVP — the worker can pick it up later.
@@ -125,9 +139,27 @@ async def get_history(
     result = await db.execute(query)
     jobs = result.scalars().all()
 
-    return AnalysisHistoryResponse(
-        jobs=[AnalysisJobResponse.model_validate(j) for j in jobs]
-    )
+    # Fetch source types for all jobs in batch
+    source_ids = [j.source_id for j in jobs]
+    source_map = {}
+    if source_ids:
+        s_result = await db.execute(select(DataSource.id, DataSource.type).where(DataSource.id.in_(source_ids)))
+        source_map = {row.id: row.type for row in s_result}
+
+    import json
+    response_jobs = []
+    for j in jobs:
+        rj = AnalysisJobResponse.model_validate(j)
+        try:
+            parsed = json.loads(rj.question)
+            if isinstance(parsed, dict) and "text" in parsed:
+                rj.question = parsed["text"]
+        except:
+            pass
+        rj.source_type = source_map.get(j.source_id)
+        response_jobs.append(rj)
+
+    return AnalysisHistoryResponse(jobs=response_jobs)
 
 
 @router.get("/{job_id}", response_model=AnalysisJobResponse)
@@ -158,7 +190,15 @@ async def get_job(
             detail="Analysis job not found",
         )
 
-    return AnalysisJobResponse.model_validate(job)
+    import json
+    rj = AnalysisJobResponse.model_validate(job)
+    try:
+        parsed = json.loads(rj.question)
+        if isinstance(parsed, dict) and "text" in parsed:
+            rj.question = parsed["text"]
+    except:
+        pass
+    return rj
 
 
 @router.get("/{job_id}/result", response_model=AnalysisResultResponse)
@@ -199,7 +239,14 @@ async def get_result(
             detail="Results not yet available",
         )
 
-    return AnalysisResultResponse.model_validate(analysis_result)
+    # Attach SQL and Engine from job for UI visibility
+    response_data = AnalysisResultResponse.model_validate(analysis_result)
+    response_data.generated_sql = job.generated_sql
+    response_data.chart_engine = analysis_result.chart_engine or "echarts"
+    
+    return response_data
+
+
 @router.post("/{job_id}/approve", response_model=AnalysisJobResponse)
 async def approve_job(
     job_id: uuid.UUID,
@@ -224,42 +271,41 @@ async def approve_job(
             detail="Paused analysis job not found",
         )
 
-    # Update state to running and resume
-    job.status = "running"
-    await db.commit()
-    await db.refresh(job)
+    # ── Vision 2026: Sequential Master Strategist ─────────────────────
+    # If this was a sequential job awaiting feedback, increment and continue
+    if job.required_pillars and job.complexity_index < job.total_pills:
+        # Move to the NEXT source
+        job.complexity_index += 1
+        
+        # In this master-strategist mode, we use multi_source_ids to find the next ID
+        if job.multi_source_ids and len(job.multi_source_ids) >= job.complexity_index:
+            next_source_id = job.multi_source_ids[job.complexity_index - 1]
+            job.source_id = next_source_id
+            
+        next_pillar = job.required_pillars[job.complexity_index - 1]
+        
+        # Update state to running and resume
+        job.status = "running"
+        await db.commit()
+        await db.refresh(job)
 
-    # Update the LangGraph state in the checkpointer to grant approval
-    try:
-        logger.info("updating_graph_state_for_approval", job_id=str(job.id))
+        target_queue = f"pillar.{next_pillar.lower()}"
+        from app.worker import celery_app
+        celery_app.send_task("pillar_task", args=[str(job.id)], queue=target_queue)
+        logger.info("sequential_next_dispatched", job_id=str(job.id), pillar=next_pillar, index=job.complexity_index)
+    else:
+        # Legacy/Single-source approval logic
+        job.status = "running"
+        await db.commit()
+        await db.refresh(job)
         
-        import redis.asyncio as redis
-        from langgraph.checkpoint.redis import AsyncRedisSaver
-        from app.use_cases.analysis.run_pipeline import get_pipeline
-        from app.infrastructure.config import settings
-        
-        redis_client = redis.Redis.from_url(settings.REDIS_URL, decode_responses=False)
-        checkpointer = AsyncRedisSaver(redis_client=redis_client)
-        
-        pipeline = get_pipeline("sql", checkpointer=checkpointer) 
-        config = {"configurable": {"thread_id": str(job.id)}}
-        # Mark as approved in the state
-        await pipeline.aupdate_state(config, {"approval_granted": True})
-        logger.info("graph_state_updated", job_id=str(job.id))
-    except Exception as e:
-        logger.error("state_update_failed", error=str(e), job_id=str(job.id))
-
-    # Re-dispatch to worker with the correct pillar queue
-    try:
         source_res = await db.execute(select(DataSource.type).where(DataSource.id == job.source_id))
         source_type = source_res.scalar_one_or_none()
         target_queue = f"pillar.{source_type.lower()}" if source_type else "celery"
         
-        from app.worker import pillar_task
-        pillar_task.apply_async(args=[str(job.id)], queue=target_queue)
+        from app.worker import celery_app
+        celery_app.send_task("pillar_task", args=[str(job.id)], queue=target_queue)
         logger.info("approval_dispatched", job_id=str(job.id), queue=target_queue)
-    except Exception as e:
-        logger.error("approval_dispatch_failed", job_id=str(job.id), error=str(e))
 
     return AnalysisJobResponse.model_validate(job)
 

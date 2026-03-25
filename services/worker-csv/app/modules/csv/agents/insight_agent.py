@@ -8,10 +8,13 @@ separate so each pipeline folder is self-contained.
 from __future__ import annotations
 
 import json
+import re
+import structlog
 from typing import Any, Dict
 
-from app.infrastructure.llm import get_llm
+logger = structlog.get_logger(__name__)
 
+from app.infrastructure.llm import get_llm
 from app.domain.analysis.entities import AnalysisState
 from app.infrastructure.config import settings
 
@@ -29,11 +32,13 @@ Based on the analysis results, write:
    - Include the key number.
    - State the implication.
 
-Respond in JSON format:
+Respond in the following STRICT JSON format:
 {{
   "insight_report": "...",
   "executive_summary": "..."
 }}
+
+STRICT JSON format only. NO PREAMBLE. NO post-explanation.
 
 Question: {question}
 Intent: {intent}
@@ -57,20 +62,20 @@ async def insight_agent(state: AnalysisState) -> Dict[str, Any]:
         # Flatten non-tabular results (like trend, correlation)
         data_sample = {k: v for k, v in analysis.items() if k not in ("plan", "source_type")}
 
-    llm = get_llm(temperature=0.3)
+    llm = get_llm(temperature=0)
 
-    # Calculate complexity instructions (Idea: Dynamic tone)
+    # Calculate complexity instructions
     idx = state.get("complexity_index", 1)
     tot = state.get("total_pills", 1)
     
     complexity_instruction = ""
     if tot > 1:
         if idx == 1:
-            complexity_instruction = "TONE: Tactical & Foundational. Focus on the immediate facts. Keep the analysis grounded in the data sample provided."
+            complexity_instruction = "TONE: Tactical & Foundational. Focus on the immediate facts."
         elif idx == tot:
-            complexity_instruction = f"TONE: Strategic & Executive. This is the master insight (level {idx}). Provide a high-level summary that synthesizes the implications. Focus on patterns, risks, or opportunities."
+            complexity_instruction = f"TONE: Strategic & Executive. Synthesis of implications."
         else:
-            complexity_instruction = f"TONE: Investigative & Advanced. Dig into the 'why'. Look for trends or outliers that are not immediately obvious."
+            complexity_instruction = f"TONE: Investigative & Advanced. Dig into the 'why'."
 
     prompt = INSIGHT_PROMPT.format(
         question=state.get("question", ""),
@@ -80,24 +85,56 @@ async def insight_agent(state: AnalysisState) -> Dict[str, Any]:
     )
 
     try:
-        response = await llm.ainvoke(prompt)
-        content = response.content
-
-        if isinstance(content, str):
-            content = content.strip()
-            if content.startswith("```"):
-                content = content.split("\n", 1)[1]
-                content = content.rsplit("```", 1)[0]
-            parsed = json.loads(content)
-        else:
-            parsed = {}
+        res = await llm.ainvoke(prompt)
+        content = res.content
+        
+        parsed = _parse_json(content)
+        
+        if not parsed:
+            logger.warning("csv_insight_parsing_failed", content=content)
+            return {
+                "insight_report": "Analysis was performed but the narrative report could not be formatted.",
+                "executive_summary": "Technical error during summary generation.",
+            }
 
         return {
             "insight_report": parsed.get("insight_report", "Analysis completed."),
             "executive_summary": parsed.get("executive_summary", "See detailed report."),
         }
-    except Exception:
+    except Exception as e:
+        logger.error("csv_insight_generation_failed", error=str(e))
         return {
             "insight_report": "Analysis was performed but insight generation encountered an error.",
             "executive_summary": "Results are available in chart form.",
         }
+
+
+def _parse_json(content: Any) -> Dict[str, Any]:
+    """Ultra-resilient JSON parser for LLM responses."""
+    if not isinstance(content, str) or not content.strip():
+        return {}
+
+    content = content.strip()
+    
+    start_idx = content.find('{')
+    end_idx = content.rfind('}')
+    
+    if start_idx == -1 or end_idx == -1:
+        return {}
+
+    json_str = content[start_idx : end_idx + 1]
+
+    try:
+        return json.loads(json_str)
+    except json.JSONDecodeError:
+        pass
+
+    try:
+        # Aggressive cleanup: remove trailing commas and control characters
+        cleaned = re.sub(r',\s*([\]}])', r'\1', json_str)
+        cleaned = re.sub(r'[\x00-\x1F\x7F]', '', cleaned)
+        return json.loads(cleaned)
+    except Exception:
+        pass
+
+    return {}

@@ -28,106 +28,6 @@ celery_app.conf.update(
     broker_connection_retry_on_startup=True,
 )
 
-# ── 1. Governance Layer (Intent + Policies) ───────────────────────────────────
-
-@celery_app.task(bind=True, name="governance_task", max_retries=3)
-def governance_task(self, job_id: str) -> dict:
-    """Handles business metrics, intent detection, and safety guardrails."""
-    return asyncio.run(_execute_governance(job_id))
-
-async def _execute_governance(job_id: str) -> dict:
-    from sqlalchemy import select
-    from app.infrastructure.database.postgres import async_session_factory
-    from app.models.analysis_job import AnalysisJob
-    from app.models.data_source import DataSource
-    from app.use_cases.analysis.run_pipeline import get_pipeline
-    from app.models.metric import BusinessMetric
-    from app.models.policy import SystemPolicy
-
-    # Instantiate fresh checkpointer for the current loop
-    import redis.asyncio as redis
-    from langgraph.checkpoint.redis import AsyncRedisSaver
-    redis_client = redis.Redis.from_url(settings.REDIS_URL, decode_responses=False)
-    checkpointer = AsyncRedisSaver(redis_client=redis_client)
-
-    try:
-        async with async_session_factory() as db:
-            res = await db.execute(select(AnalysisJob).where(AnalysisJob.id == uuid.UUID(job_id)))
-            job = res.scalar_one_or_none()
-            if not job: return {"error": "Job not found"}
-
-            job.status = "running"
-            job.started_at = datetime.now(timezone.utc)
-            await db.commit()
-
-            ds_res = await db.execute(select(DataSource).where(DataSource.id == job.source_id))
-            source = ds_res.scalar_one_or_none()
-            if not source: return {"error": "Source not found"}
-
-            # Build Initial State
-            m_result = await db.execute(select(BusinessMetric).where(BusinessMetric.tenant_id == job.tenant_id))
-            metrics = [{"name": m.name, "definition": m.definition, "formula": m.formula or "N/A"} for m in m_result.scalars().all()]
-            
-            p_result = await db.execute(select(SystemPolicy).where(SystemPolicy.tenant_id == job.tenant_id))
-            policies = [{"name": p.name, "type": p.rule_type, "description": p.description} for p in p_result.scalars().all()]
-
-            initial_state = {
-                "tenant_id": str(job.tenant_id),
-                "user_id": str(job.user_id),
-                "question": job.question,
-                "source_id": str(job.source_id),
-                "kb_id": str(job.kb_id) if job.kb_id else None,
-                "complexity_index": job.complexity_index,
-                "total_pills": job.total_pills,
-                "history": [],
-                "source_type": source.type,
-                "file_path": source.file_path,
-                "config_encrypted": source.config_encrypted,
-                "schema_summary": source.schema_json or {},
-                "business_metrics": metrics,
-                "system_policies": policies,
-                "retry_count": 0,
-                "history": [],
-                "thread_id": str(job.id),
-                "approval_granted": False,
-            }
-
-            # Run Governance Phase (Intake -> Guardrail)
-            from app.modules.governance.workflow import get_governance_pipeline
-            pipeline = get_governance_pipeline(checkpointer=checkpointer)
-            config = {"configurable": {"thread_id": str(job.id)}}
-            
-            await pipeline.ainvoke(initial_state, config) 
-            
-            target_queue = f"pillar.{source.type.lower()}"
-            pillar_task.apply_async(args=[job_id], queue=target_queue)
-            
-            return {"status": "governance_complete", "pillar_queue": target_queue}
-    except Exception as e:
-        logger.error("governance_execution_failed", error=str(e), job_id=job_id)
-        async with async_session_factory() as db:
-            from sqlalchemy import update
-            await db.execute(
-                update(AnalysisJob)
-                .where(AnalysisJob.id == uuid.UUID(job_id))
-                .values(status="error", error_message=str(e))
-            )
-            await db.commit()
-        return {"error": str(e)}
-    finally:
-        # ── Loop Safety ──
-        # In Celery with prefork, a process is reused but asyncio.run starts a NEW loop.
-        # Global objects like the SQL engine or Redis client must be cleared/closed
-        # to prevent "attached to a different loop" errors.
-        try:
-            from app.infrastructure.database.postgres import engine
-            from app.modules.sql.tools.run_sql_query import dispose_all_engines
-            await engine.dispose()
-            await dispose_all_engines()
-            await redis_client.aclose()
-        except Exception:
-            pass
-
 # ── 2. Specialist Pillars (SQL, CSV, PDF, JSON) ──────────────────────────────
 
 @celery_app.task(bind=True, name="pillar_task", max_retries=3)
@@ -148,6 +48,10 @@ async def _execute_pillar(job_id: str) -> dict:
     from langgraph.checkpoint.redis import AsyncRedisSaver
     redis_client = redis.Redis.from_url(settings.REDIS_URL, decode_responses=False)
     checkpointer = AsyncRedisSaver(redis_client=redis_client)
+
+    # Bind job_id so all logs in this task have it automatically
+    structlog.contextvars.clear_contextvars()
+    structlog.contextvars.bind_contextvars(job_id=job_id)
 
     try:
         async with async_session_factory() as db:
@@ -188,10 +92,22 @@ async def _execute_pillar(job_id: str) -> dict:
             existing_state = await pipeline.aget_state(config)
             is_resuming = bool(existing_state.next)
             
+            parsed_text = job.question
+            parsed_history = []
+            try:
+                import json
+                q_data = json.loads(job.question)
+                if isinstance(q_data, dict) and "text" in q_data:
+                    parsed_text = q_data["text"]
+                    parsed_history = q_data.get("history", [])
+            except:
+                pass
+
             graph_input = None if is_resuming else {
                 "tenant_id": str(job.tenant_id),
                 "user_id": str(job.user_id),
-                "question": job.question,
+                "question": parsed_text,
+                "history": parsed_history,
                 "source_id": str(job.source_id),
                 "source_type": source.type,
                 "kb_id": str(job.kb_id) if job.kb_id else None,
@@ -267,8 +183,23 @@ async def _execute_pillar(job_id: str) -> dict:
                   )
                   await db.execute(stmt)
                   
-                  job.status = "done"
-                  job.completed_at = datetime.now(timezone.utc)
+                  # ── Vision 2026: Multi-Agentic Coordination ──────────
+                  if job.required_pillars and len(job.required_pillars) > 1:
+                      job.status = "done" # Mark partial done
+                      celery_app.send_task("synthesis_task", args=[job_id], queue="governance")
+                      logger.info("pillar_complete_triggered_synthesis", job_id=job_id)
+                  else:
+                      job.status = "done"
+                      job.completed_at = datetime.now(timezone.utc)
+                      logger.info("pillar_complete_final", job_id=job_id)
+                      
+                      # Trigger semantic cache
+                      report_text = res_data.get("insight_report") or res_data.get("executive_summary") or ""
+                      if report_text:
+                          try:
+                              celery_app.send_task("cache_result_task", args=[parsed_text, report_text, str(job.tenant_id)], queue="governance")
+                          except Exception as e:
+                              logger.warning("cache_trigger_failed", error=str(e))
 
             await db.commit()
             return {"status": job.status}
@@ -296,14 +227,54 @@ async def _execute_pillar(job_id: str) -> dict:
         except Exception:
             pass
 
-# ── 3. Document Indexing (Knowledge Service) ──────────────────────────────────
+# ── 3. Source Discovery (Profiling Phase) ────────────────────────────────────
 
-@celery_app.task(name="process_document_indexing")
-def process_document_indexing(doc_id: str):
-    return asyncio.run(_execute_indexing(doc_id))
+@celery_app.task(name="process_source_discovery")
+def process_source_discovery(source_id: str, user_id: str):
+    """Profiles a CSV/SQL data source and triggers auto-analysis."""
+    return asyncio.run(_execute_source_discovery(source_id, user_id))
 
-async def _execute_indexing(doc_id: str):
-    # (Original indexing logic preserved)
+async def _execute_source_discovery(source_id: str, user_id: str):
+    from sqlalchemy import select
     from app.infrastructure.database.postgres import async_session_factory
-    # ... logic from previous worker.py ...
-    pass
+    from app.models.data_source import DataSource
+    import pandas as pd
+    import os
+
+    async with async_session_factory() as db:
+        res = await db.execute(select(DataSource).where(DataSource.id == uuid.UUID(source_id)))
+        source = res.scalar_one_or_none()
+        if not source:
+            logger.error("discovery_source_not_found", source_id=source_id)
+            return
+
+        logger.info("discovery_started", source_id=source_id, type=source.type)
+        
+        try:
+            schema_json = {}
+            if source.type == "csv" and source.file_path:
+                df = pd.read_csv(source.file_path)
+                from app.routers.data_sources import _profile_dataframe
+                schema_json = _profile_dataframe(df)
+            elif source.type == "sql":
+                from app.routers.data_sources import _profile_sqlite
+                # If it's a file-based sqlite
+                if source.file_path and os.path.exists(source.file_path):
+                    schema_json = _profile_sqlite(source.file_path)
+            
+            source.schema_json = schema_json
+            source.indexing_status = "done"
+            await db.commit()
+            
+            # Trigger Auto-Analysis
+            celery_app.send_task(
+                "auto_analysis_task", 
+                args=[source_id, user_id], 
+                queue="governance"
+            )
+            logger.info("discovery_complete_triggered_analysis", source_id=source_id)
+            
+        except Exception as e:
+            logger.error("discovery_failed", source_id=source_id, error=str(e))
+            source.indexing_status = "failed"
+            await db.commit()

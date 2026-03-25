@@ -1,0 +1,20 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  # FastAPI /metrics endpoint (requires prometheus-fastapi-instrumentator)
+  - job_name: 'analyst-api'
+    static_configs:
+      - targets: ['api:8000']
+    metrics_path: '/metrics'
+
+  # Redis via redis-exporter
+  - job_name: 'redis'
+    static_configs:
+      - targets: ['redis-exporter:9121']
+
+  # Celery workers via Flower (optional, if flower is added)
+  # - job_name: 'flower'
+  #   static_configs:
+  #     - targets: ['flower:5555']

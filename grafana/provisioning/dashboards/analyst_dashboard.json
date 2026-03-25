@@ -1,0 +1,72 @@
+{
+  "__inputs": [],
+  "__requires": [],
+  "annotations": { "list": [] },
+  "description": "Autonomous Data Analyst Agent — System Health Dashboard",
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 0,
+  "id": null,
+  "links": [],
+  "panels": [
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": { "color": { "mode": "thresholds" }, "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "red", "value": 1 }] } },
+        "overrides": []
+      },
+      "gridPos": { "h": 4, "w": 6, "x": 0, "y": 0 },
+      "id": 1,
+      "options": { "reduceOptions": { "calcs": ["last"] }, "orientation": "auto", "textMode": "auto", "colorMode": "background" },
+      "title": "API Request Rate (req/s)",
+      "type": "stat",
+      "targets": [{ "expr": "rate(http_requests_total[1m])", "legendFormat": "req/s", "refId": "A" }]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "color": { "mode": "thresholds" }, "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "yellow", "value": 100 }, { "color": "red", "value": 500 }] } }, "overrides": [] },
+      "gridPos": { "h": 4, "w": 6, "x": 6, "y": 0 },
+      "id": 2,
+      "options": { "reduceOptions": { "calcs": ["last"] }, "orientation": "auto", "textMode": "auto", "colorMode": "background" },
+      "title": "Redis Queue Length (pillar.pdf)",
+      "type": "stat",
+      "targets": [{ "expr": "redis_list_length{key=\"pillar.pdf\"}", "legendFormat": "queue", "refId": "A" }]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "color": { "mode": "thresholds" }, "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "yellow", "value": 80 }, { "color": "red", "value": 95 }] }, "unit": "percent" }, "overrides": [] },
+      "gridPos": { "h": 4, "w": 6, "x": 12, "y": 0 },
+      "id": 3,
+      "options": { "reduceOptions": { "calcs": ["last"] }, "orientation": "auto", "textMode": "auto", "colorMode": "background" },
+      "title": "Redis Memory Usage %",
+      "type": "stat",
+      "targets": [{ "expr": "100 * redis_memory_used_bytes / redis_memory_max_bytes", "legendFormat": "mem%", "refId": "A" }]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": {}, "overrides": [] },
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 4 },
+      "id": 4,
+      "options": { "tooltip": { "mode": "single" } },
+      "title": "API Request Rate Over Time",
+      "type": "timeseries",
+      "targets": [{ "expr": "rate(http_requests_total[5m])", "legendFormat": "{{method}} {{status_code}}", "refId": "A" }]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": {}, "overrides": [] },
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 12 },
+      "id": 5,
+      "options": { "tooltip": { "mode": "single" } },
+      "title": "Redis Connected Clients",
+      "type": "timeseries",
+      "targets": [{ "expr": "redis_connected_clients", "legendFormat": "clients", "refId": "A" }]
+    }
+  ],
+  "refresh": "30s",
+  "schemaVersion": 38,
+  "tags": ["analyst", "monitoring"],
+  "title": "Analyst Agent Dashboard",
+  "uid": "analyst-main",
+  "version": 1
+}

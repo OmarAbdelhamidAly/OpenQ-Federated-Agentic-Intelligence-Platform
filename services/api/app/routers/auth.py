@@ -10,6 +10,7 @@ import structlog
 from fastapi import APIRouter, Body, Depends, HTTPException, Request, Response, status
 from jose import JWTError
 from sqlalchemy import select
+from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.infrastructure.config import settings
@@ -59,7 +60,11 @@ async def register(
     """Create a new tenant and its first admin user."""
 
     # Check if email already exists
-    existing = await db.execute(select(User).where(User.email == body.email))
+    existing = await db.execute(
+        select(User)
+        .where(User.email == body.email)
+        .options(selectinload(User.tenant))
+    )
     if existing.scalar_one_or_none():
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
@@ -119,7 +124,11 @@ async def login(
 ) -> TokenResponse:
     """Authenticate with email + password and receive JWT tokens."""
 
-    result = await db.execute(select(User).where(User.email == body.email))
+    result = await db.execute(
+        select(User)
+        .where(User.email == body.email)
+        .options(selectinload(User.tenant))
+    )
     user = result.scalar_one_or_none()
 
     if user is None or not verify_password(body.password, user.password_hash):

@@ -15,7 +15,7 @@ from typing import Any, Dict, List, Literal, Union
 from langgraph.graph import END, StateGraph
 
 from app.domain.analysis.entities import AnalysisState
-from app.modules.shared.agents.output_assembler import output_assembler
+from app.modules.sql.agents.output_assembler import output_assembler
 from app.modules.sql.agents.data_discovery_agent import data_discovery_agent
 from app.modules.sql.agents.analysis_agent import analysis_agent
 from app.modules.sql.agents.visualization_agent import visualization_agent
@@ -44,7 +44,7 @@ def should_approve(state: AnalysisState) -> Literal["approve", "analyze"]:
 
 def should_retry(state: AnalysisState) -> Literal["retry", "visualize"]:
     """Route back to analysis on error or policy violation (up to 3 retries)."""
-    if (state.get("error") or state.get("policy_violation")) and state.get("retry_count", 0) <= 3:
+    if (state.get("error") or state.get("policy_violation")) and state.get("retry_count", 0) < 2:
         return "retry"
     return "visualize"
 
@@ -61,16 +61,41 @@ async def human_approval_node(state: AnalysisState) -> Dict[str, Any]:
 
 async def sql_execution_node(state: AnalysisState) -> Dict[str, Any]:
     """Actually run the approved SQL query and fetch full results."""
+    import structlog
+    _exec_logger = structlog.get_logger("sql.execution_node")
+
     from app.modules.sql.tools.run_sql_query import run_sql_query
-    from app.modules.shared.tools.load_data_source import get_connection_string
-    
-    connection_string = get_connection_string(state)
+    from app.modules.sql.tools.load_data_source import get_connection_string
+
+    try:
+        connection_string = get_connection_string(state)
+    except FileNotFoundError as e:
+        # SQLite file not found — surface a clear, actionable error.
+        # Without this check, SQLite silently creates an empty DB and
+        # returns 0 rows with no error at all.
+        _exec_logger.error(
+            "sqlite_file_not_found",
+            file_path=state.get("file_path"),
+            error=str(e),
+        )
+        return {"error": f"Database file not found: {e}"}
+
     query = state.get("generated_sql")
     params = state.get("analysis_results", {}).get("plan", {}).get("params", {})
-    
+
     if not query:
         return {"error": "No SQL query found to execute."}
-        
+
+    # Log exactly what we are about to run so the cause of 0-row results is
+    # visible in the worker logs without having to guess.
+    _exec_logger.info(
+        "sql_execution_start",
+        query=query,
+        params=params,
+        # Mask credentials but keep the driver+host for debugging
+        connection_hint=(connection_string or "")[:80],
+    )
+
     try:
         result = await run_sql_query.ainvoke({
             "connection_string": connection_string,
@@ -78,20 +103,25 @@ async def sql_execution_node(state: AnalysisState) -> Dict[str, Any]:
             "params": params,
             "limit": 1000,
         })
-        
+
         row_count = result.get("row_count", 0)
-        
-        # ── Self-Reflection Trigger (Idea 16) ──
-        # If 0 rows are found, check if we can provide a better hint
+        _exec_logger.info("sql_execution_done", row_count=row_count)
+
+        # ── Self-Reflection Trigger ──
+        # If 0 rows are found, build a hint and send the job back to the
+        # analysis_generator via backtrack so it can try a better query.
         reflection_count = state.get("reflection_count", 0)
         if row_count == 0 and reflection_count < 1:
-            hint = f"The query executed successfully but returned 0 rows."
-            
-            # Simple heuristic: Check if any WHERE clause value might have case issues
-            # We look at schema_summary for low_cardinality_values
+            hint = (
+                f"The query executed successfully but returned 0 rows. "
+                f"The SQL that was run was: [{query}]. "
+                "Check that table names, column names, and any string literal "
+                "values exactly match what is in the database."
+            )
+
+            # Extra hint: case-mismatch in WHERE clause literals
             schema = state.get("schema_summary", {})
             if schema:
-                # Extract potential literals from SQL (very basic heuristic)
                 literals = re.findall(r"=\s*'(.*?)'", query)
                 for lit in literals:
                     for table in schema.get("tables", []):
@@ -99,8 +129,13 @@ async def sql_execution_node(state: AnalysisState) -> Dict[str, Any]:
                             enums = col.get("low_cardinality_values", [])
                             if any(e.lower() == lit.lower() and e != lit for e in enums):
                                 matching_enum = next(e for e in enums if e.lower() == lit.lower())
-                                hint += f" Hint: You filtered by '{lit}', but sampled data for '{table['table']}.{col['name']}' shows values like '{matching_enum}'. SQL is case-sensitive for string comparisons."
-            
+                                hint += (
+                                    f" Hint: You filtered by '{lit}', but sampled data "
+                                    f"for '{table['table']}.{col['name']}' shows values "
+                                    f"like '{matching_enum}'. SQL is case-sensitive."
+                                )
+
+            _exec_logger.warning("sql_returned_zero_rows", hint=hint)
             return {
                 "analysis_results": {
                     **(state.get("analysis_results") or {}),
@@ -108,19 +143,20 @@ async def sql_execution_node(state: AnalysisState) -> Dict[str, Any]:
                 },
                 "reflection_context": hint,
                 "reflection_count": reflection_count + 1,
-                "error": None
+                "error": None,
             }
 
         return {
             "analysis_results": {
                 **(state.get("analysis_results") or {}),
                 **result,
-                "reflection_count": state.get("reflection_count", 0)
+                "reflection_count": state.get("reflection_count", 0),
             },
             "reflection_context": None,
-            "error": None
+            "error": None,
         }
     except Exception as e:
+        _exec_logger.error("sql_execution_failed", error=str(e), query=query)
         return {"error": str(e)}
 
 
@@ -169,7 +205,7 @@ async def memory_persistence_node(state: AnalysisState) -> Dict[str, Any]:
 
 async def hybrid_fusion_node(state: AnalysisState) -> Dict[str, Any]:
     """Retrieves unstructured KB context related to the SQL results (Idea 13)."""
-    from app.modules.shared.utils.retrieval import get_kb_context
+    from app.modules.sql.utils.retrieval import get_kb_context
     
     question = state.get("question", "")
     kb_id = state.get("kb_id")
@@ -214,7 +250,12 @@ def build_sql_graph(checkpointer: Any = None) -> Any:
     graph.add_edge("data_discovery", "analysis_generator")
 
     # 3. Analysis (ReAct) -> Approval Pause OR Fast-track for auto-analysis
-    def route_after_generator(state: AnalysisState) -> Literal["human_approval", "execution"]:
+    def route_after_generator(state: AnalysisState) -> str:
+        if state.get("error"):
+            if state.get("retry_count", 0) < 3:
+                return "backtrack"
+            return "__end__"
+            
         # Auto-analysis runs in the background, no human to approve
         if state.get("user_id") == "auto_analysis" or state.get("approval_granted"):
             return "execution"
@@ -225,7 +266,9 @@ def build_sql_graph(checkpointer: Any = None) -> Any:
         route_after_generator,
         {
             "human_approval": "human_approval",
-            "execution": "execution"
+            "execution": "execution",
+            "backtrack": "backtrack",
+            "__end__": END
         }
     )
 
@@ -266,4 +309,4 @@ def build_sql_graph(checkpointer: Any = None) -> Any:
     graph.add_edge("output_assembler", END)
 
     # Interrupt at human_approval to show generated_sql to user
-    return graph.compile(checkpointer=checkpointer, interrupt_before=["human_approval"])
+    return graph.compile(checkpointer=checkpointer, interrupt_after=["human_approval"])

@@ -16,10 +16,16 @@ from app.infrastructure.api_dependencies import get_current_user
 from app.models.analysis_job import AnalysisJob
 from app.models.analysis_result import AnalysisResult
 from app.models.user import User
-from app.use_cases.export.service import export_pdf, export_png, export_csv
 
 logger = structlog.get_logger(__name__)
 router = APIRouter(prefix="/api/v1/reports", tags=["reports"])
+
+from celery import Celery
+from app.infrastructure.config import settings
+
+def _get_worker() -> Celery:
+    """Helper to get celery app for dispatching."""
+    return Celery("analyst_worker", broker=settings.REDIS_URL, backend=settings.REDIS_URL)
 
 
 async def _get_job_and_result(
@@ -65,24 +71,16 @@ async def download_pdf(
 ) -> FileResponse:
     """Download analysis report as PDF."""
     job, result = await _get_job_and_result(job_id, current_user, db)
-    tenant_id_str = str(current_user.tenant_id)
+    
+    # Dispatch to specialized worker
+    worker = _get_worker()
+    task = worker.send_task("generate_export_task", args=[str(job_id), "pdf"], queue="exporter")
+    res = task.get(timeout=30) # Synchronous wait for premium generation
+    
+    if "error" in res:
+        raise HTTPException(status_code=500, detail=res["error"])
 
-    file_path = export_pdf(
-        tenant_id=tenant_id_str,
-        job_id=str(job_id),
-        question=job.question,
-        executive_summary=result.executive_summary or "",
-        insight_report=result.insight_report or "",
-        recommendations=result.recommendations or [],
-    )
-
-    logger.info(
-        "report_exported",
-        tenant_id=tenant_id_str,
-        user_id=str(current_user.id),
-        job_id=str(job_id),
-        format="pdf",
-    )
+    file_path = res["file_path"]
 
     return FileResponse(
         path=file_path,
@@ -99,27 +97,16 @@ async def download_png(
 ) -> FileResponse:
     """Download chart as PNG image."""
     job, result = await _get_job_and_result(job_id, current_user, db)
-    tenant_id_str = str(current_user.tenant_id)
 
-    if not result.chart_json:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="No chart available for this analysis",
-        )
+    # Dispatch to specialized worker
+    worker = _get_worker()
+    task = worker.send_task("generate_export_task", args=[str(job_id), "png"], queue="exporter")
+    res = task.get(timeout=30)
+    
+    if "error" in res:
+        raise HTTPException(status_code=500, detail=res["error"])
 
-    file_path = export_png(
-        tenant_id=tenant_id_str,
-        job_id=str(job_id),
-        chart_json=result.chart_json,
-    )
-
-    logger.info(
-        "report_exported",
-        tenant_id=tenant_id_str,
-        user_id=str(current_user.id),
-        job_id=str(job_id),
-        format="png",
-    )
+    file_path = res["file_path"]
 
     return FileResponse(
         path=file_path,
@@ -136,17 +123,20 @@ async def download_csv(
 ) -> FileResponse:
     """Download analyzed data as CSV."""
     job, result = await _get_job_and_result(job_id, current_user, db)
-    tenant_id_str = str(current_user.tenant_id)
 
-    file_path = export_csv(
-        tenant_id=tenant_id_str,
-        job_id=str(job_id),
-        chart_json=result.chart_json,
-    )
+    # Dispatch to specialized worker
+    worker = _get_worker()
+    task = worker.send_task("generate_export_task", args=[str(job_id), "csv"], queue="exporter")
+    res = task.get(timeout=30)
+    
+    if "error" in res:
+        raise HTTPException(status_code=500, detail=res["error"])
+
+    file_path = res["file_path"]
 
     logger.info(
         "report_exported",
-        tenant_id=tenant_id_str,
+        tenant_id=str(current_user.tenant_id),
         user_id=str(current_user.id),
         job_id=str(job_id),
         format="csv",

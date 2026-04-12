@@ -79,6 +79,8 @@ class AnalysisState(TypedDict, total=False):
 
     # ── Conversational Memory ─────────────────────────────────
     history: Annotated[Optional[List[Dict[str, str]]], safe_append]  # List of {role, content}
+    chat_history: Optional[List[Dict[str, str]]]
+    running_summary: Optional[str]
     thread_id: Optional[str]
     
     # ── HITL ──────────────────────────────────────────────────

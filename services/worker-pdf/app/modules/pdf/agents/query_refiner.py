@@ -1,3 +1,4 @@
+from app.infrastructure.config import settings
 import structlog
 from typing import Dict, Any
 from app.infrastructure.llm import get_llm
@@ -14,7 +15,7 @@ async def query_refiner_agent(state: AnalysisState) -> Dict[str, Any]:
     logger.info("query_refinement_started", original_question=question)
     
     # We use Groq's fast Llama 3.1 8B for this pre-processing step
-    llm = get_llm(temperature=0, model="llama-3.1-8b-instant")
+    llm = get_llm(temperature=0, model=settings.LLM_MODEL_FAST)
     
     history_context = ""
     if history:

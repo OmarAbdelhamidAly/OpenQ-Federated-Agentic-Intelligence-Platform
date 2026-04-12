@@ -262,6 +262,17 @@ async def _execute_source_discovery(source_id: str, user_id: str):
             source.indexing_status = "done"
             await db.commit()
             
+            # Index structural metadata into Neo4j
+            try:
+                from app.infrastructure.neo4j_adapter import Neo4jAdapter, bootstrap_neo4j
+                await bootstrap_neo4j()
+                adapter = Neo4jAdapter()
+                await adapter.upsert_json_schema(source_id, schema_json)
+                await adapter.close()
+            except Exception as neo_e:
+                logger.error("json_neo4j_indexing_failed", source_id=source_id, error=str(neo_e))
+                # Non-fatal error, continue
+
             # Trigger Auto-Analysis
             celery_app.send_task(
                 "auto_analysis_task", 

@@ -1,107 +1,36 @@
-"""Centralized LLM Factory.
-
-All agents should use `get_llm()` instead of instantiating ChatGroq/ChatOpenAI
-directly. This makes it easy to swap providers in one place.
-
-Currently configured for **OpenRouter** (OpenAI-compatible API).
+"""Centralized LLM Factory - STRICT OPENROUTER MODE.
 """
-
+import structlog
+from typing import Optional, List
 from langchain_openai import ChatOpenAI
 from langchain_core.language_models.chat_models import BaseChatModel
 from app.infrastructure.config import settings
 
+logger = structlog.get_logger(__name__)
 
-def get_llm(temperature: float = 0, model: str | None = None) -> BaseChatModel:
-    """Return a configured LLM instance with strict fallback chain: Groq -> Gemini -> OpenRouter -> Ollama."""
+def get_llm(temperature: float = 0, model: Optional[str] = None) -> BaseChatModel:
+    """Return an LLM instance, EXCLUSIVELY using OpenRouter."""
+    if not settings.OPENROUTER_API_KEY:
+        raise ValueError("CRITICAL: OPENROUTER_API_KEY is missing. System must use OpenRouter.")
+
+    # Model resolution: if agent passes `model` (e.g. from settings.LLM_MODEL_FAST), use it.
+    final_model = model or settings.LLM_MODEL or "google/gemini-2.0-flash-001"
+
+    # Enforce basic sane fallback structure if they accidentally passed an ancient groq name
+    if "llama-3" in final_model.lower() and "instant" in final_model.lower():
+        final_model = settings.LLM_MODEL_FAST  # Automatically upgrade legacy Groq strings
+
+    llm = ChatOpenAI(
+        model=final_model,
+        api_key=settings.OPENROUTER_API_KEY,
+        base_url="https://openrouter.ai/api/v1",
+        temperature=temperature,
+        max_tokens=4096,
+        max_retries=3,
+        default_headers={
+            "HTTP-Referer": "https://insightify.ai",
+            "X-Title": "Insightify Strategic Nexus"
+        },
+    )
     
-    primary_model_name = model or settings.LLM_MODEL
-    
-    def _make_gemini(m: str = "gemini-flash-latest"):
-        # We use ChatOpenAI because Gemini supports OpenAI protocol, breaking free from old SDK
-        from langchain_openai import ChatOpenAI
-        return ChatOpenAI(
-            model=m,
-            api_key=settings.GEMINI_API_KEY,
-            base_url="https://generativelanguage.googleapis.com/v1beta/openai/",
-            temperature=temperature,
-            max_tokens=4096,
-            max_retries=0,
-        )
-
-    def _make_openrouter(m: str = "google/gemma-2-9b-it"):
-        return ChatOpenAI(
-            model=m,
-            api_key=settings.OPENROUTER_API_KEY,
-            base_url="https://openrouter.ai/api/v1",
-            temperature=temperature,
-            max_tokens=2048, # Reduce tokens to save context
-            max_retries=0, # No internal retries, use LangChain fallbacks instead
-            default_headers={
-                "HTTP-Referer": "http://localhost:8000",
-                "X-Title": "DataAnalyst.AI",
-            },
-        )
-
-    def _make_groq(m: str = "llama-3.1-8b-instant"):
-        # Use 8B by default to avoid extreme TPM limits of 70B on free tier
-        return ChatOpenAI(
-            model=m,
-            api_key=settings.GROQ_API_KEY,
-            base_url="https://api.groq.com/openai/v1",
-            temperature=temperature,
-            max_tokens=2048,
-            max_retries=0, # No internal retries, use LangChain fallbacks instead
-        )
-
-    def _make_ollama(m: str = "llama3.1"):
-        try:
-            from langchain_ollama import ChatOllama
-        except ImportError:
-            raise ImportError("langchain-ollama is not installed.")
-        return ChatOllama(
-            model=m,
-            base_url=settings.OLLAMA_BASE_URL,
-            temperature=temperature,
-        )
-
-    # 1. Instantiate Primary Model
-    if primary_model_name.startswith("ollama/"):
-        m_name = primary_model_name.replace("ollama/", "")
-        llm = _make_ollama(m_name)
-    elif "gemini" in primary_model_name.lower():
-        # Strip prefixes like 'gemini/' or 'models/'
-        m_name = primary_model_name.lower()
-        for prefix in ["gemini/", "models/"]:
-            if m_name.startswith(prefix):
-                m_name = m_name[len(prefix):]
-        # Common correction for Flash
-        if m_name == "gemini":
-            m_name = "gemini-flash-latest"
-        
-        llm = _make_gemini(m_name)
-    elif "groq" in primary_model_name.lower() or "llama-3" in primary_model_name.lower():
-        m_name = primary_model_name.replace("groq/", "") if primary_model_name.lower().startswith("groq/") else primary_model_name
-        llm = _make_groq(m_name)
-    else:
-        # Default to Groq 8B if not specified
-        llm = _make_groq("llama-3.1-8b-instant")
-
-    # 2. Build Direct Fallback Chain (Optimized for speed)
-    # Priority: Primary (Gemini) -> Groq 8B
-    fallbacks = []
-
-    # If primary isn't Groq, use Groq as the fast fallback
-    if settings.GROQ_API_KEY and "groq" not in primary_model_name:
-        fallbacks.append(_make_groq("llama-3.1-8b-instant"))
-
-    # If primary isn't Gemini, and we have the key, add it as a backup (though usually Gemini is primary)
-    if settings.GEMINI_API_KEY and "gemini" not in primary_model_name:
-        fallbacks.append(_make_gemini("gemini-pro"))
-
-    if fallbacks:
-        return llm.with_fallbacks(fallbacks)
-        
     return llm
-
-
-

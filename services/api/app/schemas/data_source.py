@@ -20,6 +20,14 @@ class SQLConnectionRequest(BaseModel):
     password: str
 
 
+class GithubConnectionRequest(BaseModel):
+    """POST /data-sources/connect-github — connect a github repo."""
+    name: str = Field(..., min_length=1, max_length=200)
+    github_url: str
+    branch: str = "main"
+    access_token: Optional[str] = None
+
+
 class DataSourceResponse(BaseModel):
     """Single data source representation."""
     id: uuid.UUID

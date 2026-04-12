@@ -101,9 +101,17 @@ async def submit_query(
                 )
 
     import json
-    actual_question = body.question
+    payload = {"text": body.question}
     if body.chat_history:
-        actual_question = json.dumps({"text": body.question, "history": body.chat_history})
+        payload["history"] = body.chat_history
+    if body.session_id:
+        payload["session_id"] = body.session_id
+    
+    # We serialize it to JSON if there's any auxiliary data
+    if len(payload) > 1:
+        actual_question = json.dumps(payload)
+    else:
+        actual_question = body.question
 
     # ── Master Strategist: Path Calculation ──────────────────────────
     required_pillars = []
@@ -186,6 +194,62 @@ async def submit_query(
     result_json = AnalysisJobResponse.model_validate(job)
     result_json.source_type = source.type
     return result_json
+
+
+@router.post(
+    "/nexus/query",
+    response_model=AnalysisJobResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def submit_nexus_query(
+    body: Annotated[AnalysisQueryRequest, Body()],
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> AnalysisJobResponse:
+    """Submit a multi-source Strategic Nexus query.
+
+    Dispatches to the dedicated 'nexus' worker queue for autonomous 
+    multi-pillar synthesis and knowledge graph exploration.
+    """
+    # Verify all sources
+    source_ids = [body.source_id] if body.source_id else []
+    if body.multi_source_ids:
+        source_ids.extend(body.multi_source_ids)
+    
+    if not source_ids:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="At least one source must be selected for Nexus analysis.",
+        )
+
+    for sid in source_ids:
+        await verify_permission("query", str(sid), current_user, db)
+
+    job = AnalysisJob(
+        id=uuid.uuid4(),
+        tenant_id=current_user.tenant_id,
+        user_id=current_user.id,
+        source_id=source_ids[0],
+        multi_source_ids=source_ids[1:] if len(source_ids) > 1 else [],
+        question=body.question,
+        kb_id=body.kb_id,
+        status="pending",
+        required_pillars=["nexus"], # Special marker for the nexus worker
+        total_pills=1,
+    )
+    db.add(job)
+    await db.commit()
+    await db.refresh(job)
+
+    # Dispatch to the NEXUS worker
+    try:
+        from app.worker import celery_app
+        celery_app.send_task("nexus.analyze", args=[str(job.id)], queue='pillar.nexus')
+        logger.info("nexus_query_dispatched", job_id=str(job.id), tenant_id=str(current_user.tenant_id))
+    except Exception as e:
+        logger.error("nexus_dispatch_failed", job_id=str(job.id), error=str(e))
+
+    return AnalysisJobResponse.model_validate(job)
 
 
 @router.get("/history", response_model=AnalysisHistoryResponse)

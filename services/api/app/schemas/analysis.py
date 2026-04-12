@@ -18,6 +18,7 @@ class AnalysisQueryRequest(BaseModel):
     total_pills: int = Field(default=1, ge=1)
     multi_source_ids: Optional[List[uuid.UUID]] = None
     chat_history: Optional[List[Dict[str, str]]] = None
+    session_id: Optional[str] = None
 
 
 class AnalysisJobResponse(BaseModel):

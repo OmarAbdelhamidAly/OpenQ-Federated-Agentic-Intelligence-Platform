@@ -71,3 +71,6 @@ structlog==24.4.0
 # Fast Text RAG
 PyMuPDF==1.25.1
 
+# Neo4j Graph DB
+neo4j==5.21.0
+

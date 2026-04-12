@@ -16,7 +16,7 @@ from app.infrastructure.database.postgres import Base
 class DataSource(Base):
     __tablename__ = "data_sources"
     __table_args__ = (
-        CheckConstraint("type IN ('csv', 'sql', 'document', 'pdf', 'json')", name="ck_data_sources_type"),
+        CheckConstraint("type IN ('csv', 'sql', 'document', 'pdf', 'json', 'codebase', 'image', 'audio', 'video')", name="ck_data_sources_type"),
         CheckConstraint("indexing_status IN ('pending', 'running', 'done', 'failed')", name="ck_data_sources_indexing_status"),
     )
 
@@ -27,8 +27,8 @@ class DataSource(Base):
         UUID(as_uuid=True), ForeignKey("tenants.id"), nullable=False, index=True
     )
     type: Mapped[str] = mapped_column(
-        String(10), nullable=False
-    )  # "csv" | "sql" | "document" | "pdf" | "json"
+        String(20), nullable=False
+    )  # "csv" | "sql" | "document" | "pdf" | "json" | "codebase" | "image" | "audio" | "video"
     name: Mapped[str] = mapped_column(Text, nullable=False)
     file_path: Mapped[Optional[str]] = mapped_column(
         Text, nullable=True

@@ -20,18 +20,27 @@ logger = structlog.get_logger(__name__)
 
 
 def _extract_text_from_pdf(file_path: str) -> List[Dict[str, Any]]:
-    """Extract text page-by-page using PyMuPDF (fitz). Returns list of page dicts."""
-    import fitz  # PyMuPDF
-
+    """Extract text from PDF (page-by-page) or .txt (whole file). Returns list of page dicts."""
     pages = []
-    doc = fitz.open(file_path)
-    for page_num in range(len(doc)):
-        page = doc[page_num]
-        text = page.get_text("text")
-        if text and text.strip():
-            pages.append({"page_num": page_num + 1, "text": text.strip()})
-    doc.close()
-    logger.info("text_extraction_done", file=file_path, pages_with_text=len(pages))
+    
+    if not file_path.lower().endswith(".pdf"):
+        with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
+            full_text = f.read()
+            if full_text.strip():
+                # Treat whole txt as one virtual page for metadata consistency
+                pages.append({"page_num": 1, "text": full_text.strip()})
+        logger.info("text_file_extraction_done", file=file_path)
+    else:
+        import fitz  # PyMuPDF
+        doc = fitz.open(file_path)
+        for page_num in range(len(doc)):
+            page = doc[page_num]
+            text = page.get_text("text")
+            if text and text.strip():
+                pages.append({"page_num": page_num + 1, "text": text.strip()})
+        doc.close()
+        logger.info("pdf_extraction_done", file=file_path, pages_with_text=len(pages))
+        
     return pages
 
 
@@ -117,7 +126,36 @@ async def fast_indexing_agent(source_id: str) -> Dict[str, Any]:
                     )
                     await db.commit()
 
-        # 4. Final Updates
+        # 4. Neo4j Knowledge Graph Sync (Universal Synthesis Layer)
+        try:
+            from app.infrastructure.neo4j_adapter import Neo4jAdapter
+            from app.modules.pdf.utils.taxonomy import get_document_taxonomy
+            neo4j = Neo4jAdapter()
+            
+            # Prepare chunks for Neo4j structure
+            neo4j_chunks = []
+            for i, chunk in enumerate(chunks):
+                neo4j_chunks.append({
+                    "chunk_id": str(uuid.uuid5(uuid.NAMESPACE_DNS, f"{source_id}_text_{i}")),
+                    "text": chunk["text"],
+                    "page": chunk["page_num"],
+                    "chunk_index": chunk["chunk_index"]
+                })
+            
+            # Get Taxonomy
+            taxonomy = get_document_taxonomy(source.context_hint)
+            
+            await neo4j.batch_upsert_document_structure(
+                source_id=source_id,
+                document_id=source_id,
+                chunks=neo4j_chunks,
+                taxonomy=taxonomy
+            )
+            logger.info("neo4j_sync_done", source_id=source_id, chunks=len(neo4j_chunks))
+        except Exception as neo_err:
+            logger.warning("neo4j_sync_failed_secondary", error=str(neo_err))
+
+        # 5. Final Updates
         async with async_session_factory() as db:
             await db.execute(
                 update(DataSource)

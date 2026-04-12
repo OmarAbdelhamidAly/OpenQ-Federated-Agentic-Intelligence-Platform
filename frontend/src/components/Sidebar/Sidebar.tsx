@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { DataSourcesAPI } from '../../services/api';
-import type { DataSource } from '../../services/api';
+import type { DataSource } from '../../types';
+import { useAppStore } from '../../store/appStore';
 import {
   Database,
   Upload,
@@ -13,32 +14,27 @@ import {
   ShieldCheck,
   Users,
   Mic,
+  Code,
   LogOut,
-  Loader2
+  Loader2,
+  Zap,
+  Image as ImageIcon,
+  Film
 } from 'lucide-react';
 import { VoiceAPI } from '../../services/api';
 import { recorder } from '../../utils/audio';
 import ConnectModal from './ConnectModal';
 
-interface SidebarProps {
-  activeSourceIds: string[];
-  onToggleSource: (id: string | null) => void;
-  onSelectSource: (id: string | null) => void;
-  currentView: string;
-  onViewChange: (view: string) => void;
-  user: any;
-  onLogout: () => void;
-}
+export default function Sidebar({ onLogout }: { onLogout: () => void }) {
+  const {
+    activeSourceIds,
+    currentView,
+    user,
+    setCurrentView,
+    toggleSource,
+    selectSource
+  } = useAppStore();
 
-export default function Sidebar({
-  activeSourceIds,
-  onToggleSource,
-  onSelectSource,
-  currentView,
-  onViewChange,
-  user,
-  onLogout
-}: SidebarProps) {
   const [sources, setSources] = useState<DataSource[]>([]);
   const [loading, setLoading] = useState(true);
   const [isConnectModalOpen, setIsConnectModalOpen] = useState(false);
@@ -102,7 +98,7 @@ export default function Sidebar({
     if (!confirm('Are you sure you want to delete this source?')) return;
     try {
       await DataSourcesAPI.delete(id);
-      if (activeSourceIds.includes(id)) onToggleSource(id);
+      if (activeSourceIds.includes(id)) toggleSource(id);
       fetchSources();
     } catch (error) {
       console.error('Failed to delete source', error);
@@ -116,8 +112,7 @@ export default function Sidebar({
   const NavItem = ({ icon: Icon, label, color = "text-slate-400", id }: { icon: any, label: string, color?: string, id: string }) => (
     <button
       onClick={() => {
-        onViewChange(id);
-        onSelectSource(null); // Clear active source when switching to a general portal
+        selectSource(null, id as any); // Atomic update for view and source selection
       }}
       className={`
         w-full flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all group text-left
@@ -173,6 +168,7 @@ export default function Sidebar({
       <div className="flex-1 overflow-y-auto px-4 py-2 custom-scroll">
         <SectionHeader>Master Hub</SectionHeader>
         <div className="space-y-1">
+          <NavItem id="nexus" icon={Zap} label="Strategic Nexus" color="text-yellow-400" />
           <NavItem id="about" icon={ShieldCheck} label="Insightify Team (About)" color="text-cyan-400" />
         </div>
 
@@ -182,6 +178,10 @@ export default function Sidebar({
           <NavItem id="sql" icon={Database} label="SQL Oracle" color="text-indigo-400" />
           <NavItem id="pdf" icon={BookOpen} label="PDF Insight" color="text-red-400" />
           <NavItem id="json" icon={Box} label="JSON Mapper" color="text-orange-400" />
+          <NavItem id="codebase" icon={Code} label="Codebase Context" color="text-emerald-400" />
+          <NavItem id="image" icon={ImageIcon} label="Vision Analytics" color="text-fuchsia-400" />
+          <NavItem id="audio" icon={Mic} label="Audio Intersect" color="text-pink-400" />
+          <NavItem id="video" icon={Film} label="Video Spatial" color="text-purple-400" />
         </div>
 
         <SectionHeader>Governance</SectionHeader>
@@ -214,8 +214,10 @@ export default function Sidebar({
                   <div
                     key={source.id}
                     onClick={() => {
-                      onToggleSource(source.id);
-                      onViewChange('dashboard');
+                      toggleSource(source.id);
+                      if (!activeSourceIds.includes(source.id)) {
+                        setCurrentView('dashboard');
+                      }
                     }}
                     className={`
                       group flex items-center justify-between p-3 rounded-xl cursor-pointer transition-all duration-300 border
@@ -231,6 +233,10 @@ export default function Sidebar({
                           {source.type === 'sql' && <Database className="w-3 h-3" />}
                           {source.type === 'pdf' && <BookOpen className="w-3 h-3" />}
                           {source.type === 'json' && <Box className="w-3 h-3" />}
+                          {source.type === 'codebase' && <Code className="w-3 h-3" />}
+                          {source.type === 'image' && <ImageIcon className="w-3 h-3" />}
+                          {source.type === 'audio' && <Mic className="w-3 h-3" />}
+                          {source.type === 'video' && <Film className="w-3 h-3" />}
                         </div>
                         {/* Sequence badge for multi-select */}
                         {isActive && activeSourceIds.length > 1 && (
@@ -259,7 +265,7 @@ export default function Sidebar({
             <label className="flex items-center justify-center gap-2 p-3 border border-slate-800/50 rounded-xl bg-slate-900/20 text-slate-500 hover:text-[var(--primary)] hover:bg-[var(--primary)]/5 hover:border-[var(--primary)]/30 transition-all cursor-pointer group">
               <Upload className="w-3.5 h-3.5" />
               <span className="text-[10px] font-black uppercase tracking-tight">Upload</span>
-              <input type="file" className="hidden" onChange={handleFileUpload} accept=".sqlite,.db,.csv,.xlsx,.pdf,.json" />
+              <input type="file" className="hidden" onChange={handleFileUpload} accept=".sqlite,.db,.csv,.xlsx,.pdf,.json,.zip,.jpg,.jpeg,.png,.mp4,.mp3,.wav" />
             </label>
             <button
               onClick={() => setIsConnectModalOpen(true)}

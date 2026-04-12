@@ -1,6 +1,6 @@
 <div align="center">
 
-# 🤖 Insightify
+# 🤖 OpenQ
 
 **Autonomous Enterprise Data Analyst — Multi-Tenant SaaS Platform**
 
@@ -30,7 +30,7 @@
 
 ## 🎯 What It Does
 
-**Insightify** is a production-grade, multi-tenant SaaS platform that transforms raw enterprise data into executive-quality insights through a fully autonomous multi-agent AI pipeline.
+**OpenQ** is a production-grade, multi-tenant SaaS platform that transforms raw enterprise data into executive-quality insights through a fully autonomous multi-agent AI pipeline.
 
 A user connects a data source, types a natural-language question, and the system handles everything else — schema discovery, query generation, self-healing on failure, visualization, insight synthesis, and export — with **zero manual intervention**.
 
@@ -62,7 +62,7 @@ A user connects a data source, types a natural-language question, and the system
 
 ## 🏗️ System Architecture
 
-The platform is built as a **4-layer microservices stack** orchestrated by Docker Compose (Kubernetes for production):
+The platform is built as a **10-Pillar Federated Architecture** orchestrated by Docker Compose (Kubernetes for production):
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
@@ -86,29 +86,23 @@ The platform is built as a **4-layer microservices stack** orchestrated by Docke
 │  Routes to appropriate pillar or requests clarification                 │
 └──────────────────────────────────┬──────────────────────────────────────┘
                                    │ Celery tasks by type
-      ┌──────────────────┬──────────────────┬──────────────────┐
-      ▼                  ▼                  ▼                  ▼
-┌───────────────┐ ┌───────────────┐ ┌───────────────┐ ┌───────────────┐
-│  LAYER 3      │ │  LAYER 3      │ │  LAYER 3      │ │  LAYER 3      │
-│  worker-sql   │ │  worker-csv   │ │  worker-json  │ │  worker-pdf   │
-│               │ │               │ │               │ │               │
-│ 12-node       │ │ 11-node       │ │ 10-node       │ │ 10-node       │
-│ Cyclic        │ │ Cyclic        │ │ Cyclic        │ │ Orchestrator  │
-│ StateGraph    │ │ StateGraph    │ │ StateGraph    │ │ StateGraph    │
-│               │ │               │ │               │ │               │
-│ discovery →   │ │ discovery →   │ │ discovery →   │ │ refine →      │
-│ generator →   │ │ [clean?] →    │ │ guardrail →   │ │ router →      │
-│ [HITL] →      │ │ guardrail →   │ │ analysis →    │ │ retrieval →   │
-│ execution →   │ │ analysis →    │ │ [reflect?] →  │ │ [vision/text/ │
-│ [reflect?] →  │ │ [reflect?] →  │ │ visualization │ │  ocr] synth → │
-│ hybrid_fusion→│ │ visualization→│ │ insight →     │ │ verifier →    │
-│ visualization │ │ insight →     │ │ verifier →    │ │ analyst →     │
-│ insight →     │ │ verifier →    │ │ recomm. →     │ │ assembler     │
-│ verifier →    │ │ recomm. →     │ │ save_cache    │ └───────────────┘
-│ recomm. →     │ │ assembler →   │ └───────────────┘
-│ save_cache →  │ │ save_cache    │
-│ assembler     │ └───────────────┘
-└───────────────┘
+      ┌──────────────────┬──────────────────┬──────────────────┬──────────────────┐
+      ▼                  ▼                  ▼                  ▼                  ▼
+┌───────────────┐ ┌───────────────┐ ┌───────────────┐ ┌───────────────┐ ┌───────────────┐
+│  LAYER 3      │ │  LAYER 3      │ │  LAYER 3      │ │  LAYER 3      │ │  LAYER 3      │
+│  worker-sql   │ │  worker-csv   │ │  worker-pdf   │ │  worker-code  │ │  worker-nexus │
+│               │ │               │ │               │ │               │ │               │
+│ 12-node       │ │ 11-node       │ │ Orchestrator  │ │ 8-node Neo4j  │ │ Federated     │
+│ StateGraph    │ │ StateGraph    │ │ Multi-modal   │ │ StateGraph    │ │ Orchestrator  │
+│               │ │               │ │               │ │               │ │               │
+│ discovery →   │ │ discovery →   │ │ refine →      │ │ extraction →  │ │ router →      │
+│ generator →   │ │ guardrail →   │ │ router →      │ │ cypher_gen →  │ │ graph_explore→│
+│ [HITL] →      │ │ analysis →    │ │ retrieval →   │ │ reflection →  │ │ synthesis →   │
+│ execution →   │ │ visualization │ │ synth_engine→ │ │ insight →     │ │ memory →      │
+│ hybrid_fusion→│ │ verifier →    │ │ verifier →    │ │ memory →      │ │ verifier →    │
+│ insight →     │ │ recomm. →     │ │ analyst →     │ │ save_cache →  │ │ save_cache    │
+│ verifier      │ │ save_cache    │ │ assembler     │ │ assembler     │ │ assembler     │
+└───────────────┘ └───────────────┘ └───────────────┘ └───────────────┘ └───────────────┘
          │
          ▼
 ┌─────────────────────────────────────────────────────────────────────────┐
@@ -132,7 +126,7 @@ Qdrant :6333      — Vector DB for PDF knowledge base (multi-vector RAG)
 ## 📂 Repository Structure
 
 ```
-insightify/
+OpenQ/
 │
 ├── 📁 services/
 │   ├── api/                      # Layer 1: Public API Gateway
@@ -181,7 +175,12 @@ insightify/
 │   │                             # compute_ranking · compute_trend · profile_dataframe
 │   │
 │   ├── worker-json/              # Layer 3: JSON analysis pipeline
-│   ├── worker-pdf/               # Layer 3: PDF Multimodal analysis (Gemini 2.0 Flash)
+│   ├── worker-pdf/               # Layer 3: PDF Multimodal analysis (Gemini 2.0)
+│   ├── worker-code/              # Layer 3: Codebase AST analysis (Neo4j RAG)
+│   ├── worker-nexus/             # Layer 3: Federated Orchestrator (Cross-domain)
+│   ├── worker-audio/             # Layer 3: Audio analysis + transcription
+│   ├── worker-image/             # Layer 3: Image processing
+│   ├── worker-video/             # Layer 3: Video understanding
 │   └── exporter/                 # Layer 4: Async PDF/XLSX/JSON export service
 │
 ├── 📁 frontend/                  # React + TypeScript SPA (Vite)
@@ -216,7 +215,7 @@ insightify/
 ├── 📁 alembic/                   # Database migrations
 │   └── versions/                 # 001_initial · add_auto_analysis_fields
 │
-├── docker-compose.yml            # 10-service local stack (+ Prometheus + Grafana)
+├── docker-compose.yml            # 16-service local stack (+ Prometheus + Grafana)
 ├── .env.example                  # All required environment variables documented
 ├── NTI_API_DOCUMENTATION.md      # Full REST API reference
 ├── NTI_ARCHITECTURE.md           # Architecture deep-dive
@@ -268,7 +267,7 @@ START → [intake] → check_intake → [guardrail] → END
 
 ### Layer 3 — Execution Pillars
 
-Four specialized Celery workers, each independently scalable:
+Ten specialized Celery workers (SQL, CSV, JSON, PDF, Code, Nexus, Audio, Image, Video, Exporter), each independently scalable:
 
 | Worker | Queue | Pipeline Nodes | Graph Type | Key Capabilities |
 |---|---|---|---|---|
@@ -276,6 +275,9 @@ Four specialized Celery workers, each independently scalable:
 | `worker-csv` | `pillar.csv` | **11** | Cyclic StateGraph | Conditional data cleaning, guardrail, self-healing reflection, verifier |
 | `worker-json` | `pillar.json` | **10** | Directed Cyclic StateGraph | MongoDB + Qdrant 768d RAG, semantic decomposition |
 | `worker-pdf` | `pillar.pdf` | **10** | Orchestrator StateGraph | Gemini 2.0 Flash Vision, triple synthesis engines, anti-hallucination loop |
+| `worker-code` | `pillar.code` | **8** | Cyclic StateGraph | Neo4j AST mapping, Cypher generation, code snippet retrieval |
+| `worker-nexus` | `pillar.nexus` | **6** | Federated Orchestrator | Cross-pillar graph exploration, strategic synthesis, centralized context management |
+| `worker-audio/video/image` | `pillar.audio/video/image` | **N/A** | Multimedia Task Workers | Multimodal understanding using Gemini Flash Vision and dedicated transcription tools |
 
 ---
 
@@ -508,8 +510,8 @@ policies
 
 ```bash
 # 1. Clone and configure
-git clone https://github.com/OmarAbdelhamidAly/insightify.git
-cd insightify
+git clone https://github.com/OmarAbdelhamidAly/OpenQ.git
+cd OpenQ
 cp .env.example .env
 # Edit .env — minimum required: GROQ_API_KEY, SECRET_KEY, AES_KEY
 
@@ -566,8 +568,8 @@ kubectl apply -f k8s/ingress.yaml
 ### Quick Start
 
 ```bash
-git clone https://github.com/OmarAbdelhamidAly/insightify.git
-cd insightify
+git clone https://github.com/OmarAbdelhamidAly/OpenQ.git
+cd OpenQ
 cp .env.example .env
 ```
 

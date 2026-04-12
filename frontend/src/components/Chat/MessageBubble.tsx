@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import type { Message } from '../../hooks/useAnalysisPolling';
+import type { Message } from '../../types';
 import { LangGraphVisualizer } from './LangGraphVisualizer';
 import DynamicChart from '../Visualizations/DynamicChart';
 import MarkdownBlock from '../Visualizations/MarkdownBlock';
@@ -241,7 +241,7 @@ export default function MessageBubble({ message, onApproveSuccess }: Props) {
                   <div>
                     <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest block mb-2">Visual Grounding</span>
                     <div className="flex gap-3 overflow-x-auto pb-2 custom-scroll">
-                      {message.job.visual_context.map((ctx, idx) => (
+                      {message.job.visual_context.map((ctx: { image_base64: string; page_number: number }, idx: number) => (
                         <div
                           key={idx}
                           onClick={() => setSelectedImage(ctx.image_base64)}
@@ -343,23 +343,23 @@ export default function MessageBubble({ message, onApproveSuccess }: Props) {
               <img src={selectedImage} className="max-w-full max-h-[80vh] object-contain" alt="Visual grounding" />
               <div className="p-6 bg-slate-900/90 border-t border-slate-800 flex items-center justify-between">
                 <span className="text-xs font-black text-slate-400 uppercase tracking-widest">
-                  Page {message.job?.visual_context?.find(c => c.image_base64 === selectedImage)?.page_number} / {message.job?.visual_context?.length}
+                  Page {message.job?.visual_context?.find((c: { image_base64: string }) => c.image_base64 === selectedImage)?.page_number} / {message.job?.visual_context?.length}
                 </span>
                 <div className="flex items-center gap-2">
                   <button
                     onClick={() => {
-                      const idx = message.job?.visual_context?.findIndex(c => c.image_base64 === selectedImage) ?? 0;
+                      const idx = message.job?.visual_context?.findIndex((c: { image_base64: string }) => c.image_base64 === selectedImage) ?? 0;
                       if (idx > 0) setSelectedImage(message.job!.visual_context![idx - 1].image_base64);
                     }}
-                    disabled={(message.job?.visual_context?.findIndex(c => c.image_base64 === selectedImage) ?? 0) === 0}
+                    disabled={(message.job?.visual_context?.findIndex((c: { image_base64: string }) => c.image_base64 === selectedImage) ?? 0) === 0}
                     className="bg-white/5 hover:bg-white/10 disabled:opacity-20 text-white px-3 py-2 rounded-xl text-[10px] font-black uppercase transition-all"
                   >Prev</button>
                   <button
                     onClick={() => {
-                      const idx = message.job?.visual_context?.findIndex(c => c.image_base64 === selectedImage) ?? 0;
+                      const idx = message.job?.visual_context?.findIndex((c: { image_base64: string }) => c.image_base64 === selectedImage) ?? 0;
                       if (idx < (message.job?.visual_context?.length ?? 0) - 1) setSelectedImage(message.job!.visual_context![idx + 1].image_base64);
                     }}
-                    disabled={(message.job?.visual_context?.findIndex(c => c.image_base64 === selectedImage) ?? 0) === (message.job?.visual_context?.length ?? 0) - 1}
+                    disabled={(message.job?.visual_context?.findIndex((c: { image_base64: string }) => c.image_base64 === selectedImage) ?? 0) === (message.job?.visual_context?.length ?? 0) - 1}
                     className="bg-white/5 hover:bg-white/10 disabled:opacity-20 text-white px-3 py-2 rounded-xl text-[10px] font-black uppercase transition-all"
                   >Next</button>
                   <div className="w-px h-6 bg-slate-800 mx-2" />

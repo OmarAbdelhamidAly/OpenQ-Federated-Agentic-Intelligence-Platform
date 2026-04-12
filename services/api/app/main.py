@@ -13,7 +13,7 @@ from fastapi.staticfiles import StaticFiles
 
 from app.infrastructure.config import settings
 from app.infrastructure.middleware import setup_middleware
-from app.routers import auth, users, data_sources, analysis, reports, groups, metrics, knowledge, policies, superset, voice
+from app.routers import auth, users, data_sources, analysis, reports, groups, metrics, knowledge, policies, superset, voice, codebase
 from prometheus_fastapi_instrumentator import Instrumentator
 
 logger = structlog.get_logger(__name__)
@@ -118,7 +118,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             DO $$
             BEGIN
                 ALTER TABLE data_sources DROP CONSTRAINT IF EXISTS ck_data_sources_type;
-                ALTER TABLE data_sources ADD CONSTRAINT ck_data_sources_type CHECK (type IN ('csv', 'sql', 'document', 'pdf', 'json'));
+                ALTER TABLE data_sources ADD CONSTRAINT ck_data_sources_type CHECK (type IN ('csv', 'sql', 'document', 'pdf', 'json', 'codebase'));
             EXCEPTION WHEN duplicate_object THEN
                 NULL;
             END $$;
@@ -169,6 +169,7 @@ def create_app() -> FastAPI:
     app.include_router(policies.router)
     app.include_router(superset.router)
     app.include_router(voice.router)
+    app.include_router(codebase.router)
 
     # Serve static assets (CSS, JS, images)
     app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")

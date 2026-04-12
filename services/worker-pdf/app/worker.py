@@ -216,6 +216,8 @@ def process_source_indexing(source_id: str):
 async def _execute_source_indexing(source_id: str):
     from app.modules.pdf.flows.deep_vision.agents.indexing_agent import indexing_agent_source
     from app.modules.pdf.flows.fast_text.agents.fast_indexing_agent import fast_indexing_agent
+    from app.modules.pdf.flows.strategic_nexus.agents.nexus_strategic_indexer import strategic_nexus_indexer
+    from app.modules.pdf.flows.hybrid_ocr.agents.hybrid_indexing_agent import hybrid_indexing_agent
     from app.models.data_source import DataSource
     from app.infrastructure.database.postgres import async_session_factory
     from sqlalchemy import select
@@ -243,16 +245,19 @@ async def _execute_source_indexing(source_id: str):
     results.append(await fast_indexing_agent(source_id))
 
     # 2. Add Hybrid OCR Layer if requested
-    if indexing_mode in ["hybrid", "deep_vision"]:
-        logger.info("running_hybrid_layer", mode="hybrid_ocr")
-        # Currently hybrid_ocr_agent is retrieval-only, but we could add indexing here.
-        # For now, we note that text is indexed and vision blocks will be processed at query time.
-        pass
+    if indexing_mode == "hybrid":
+        logger.info("running_hybrid_layer", mode="hybrid_indexing")
+        results.append(await hybrid_indexing_agent(source_id))
 
     # 3. Add Deep Vision Layer if requested
     if indexing_mode == "deep_vision":
         logger.info("running_vision_layer", mode="deep_vision")
         results.append(await indexing_agent_source(source_id))
+
+    # 4. Add Strategic Nexus Layer (Flow 4) if requested
+    if indexing_mode == "strategic_nexus":
+        logger.info("running_strategic_nexus_layer", mode="strategic_nexus")
+        results.append(await strategic_nexus_indexer(source_id))
 
     # Determine final status
     final_status = "success" if all(r.get("status") == "success" for r in results if isinstance(r, dict)) else "partial_failure"
@@ -265,6 +270,17 @@ async def _execute_source_indexing(source_id: str):
             args=[source_id, "00000000-0000-0000-0000-000000000000"],
             queue="governance"
         )
+    
+    # NEW: Trigger Strategic Nexus Stitching
+    try:
+        celery_app.send_task(
+            "nexus.discovery", 
+            args=[source_id], 
+            queue="pillar.nexus"
+        )
+        logger.info("nexus_stitching_triggered", source_id=source_id)
+    except Exception as e:
+        logger.warning("nexus_stitching_trigger_failed", error=str(e))
 
     return {"status": final_status, "modes": [r.get("mode") for r in results if isinstance(r, dict)]}
 

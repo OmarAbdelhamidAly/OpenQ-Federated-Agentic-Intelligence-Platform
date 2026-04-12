@@ -22,10 +22,8 @@ from app.modules.sql.tools.load_data_source import get_connection_string
 from app.modules.sql.utils.retrieval import get_kb_context
 from app.modules.sql.utils.sql_validator import SQLValidator
 from app.modules.sql.tools.run_sql_query import get_async_engine
-from app.modules.sql.utils.golden_sql import golden_sql_manager
-from app.modules.sql.utils.schema_selector import schema_selector
-from app.modules.sql.utils.schema_mapper import schema_mapper
-from app.modules.sql.utils.insight_memory import insight_memory
+from app.modules.sql.utils.insight_memory import episodic_memory
+from app.modules.sql.utils.procedural_memory import procedural_memory
 from langchain_core.messages import SystemMessage, HumanMessage, ToolMessage
 
 # ── Prompt ────────────────────────────────────────────────────────────────────
@@ -46,7 +44,11 @@ Golden Examples:
 {golden_examples}
 
 Conversational Memory:
+{running_summary}
 {chat_history}
+
+Procedural Skill:
+{procedural_skill}
 
 {error_hint}
 
@@ -156,7 +158,7 @@ async def analysis_agent(state: AnalysisState) -> Dict[str, Any]:
     # Currently using Groq/Llama-8b for free tier speed.
     # To upgrade accuracy, swap to the specialized SQL model below:
     # llm = get_llm(temperature=0, model="defog/sqlcoder-70b-v2").bind_tools([run_sql_query])
-    llm = get_llm(temperature=0).bind_tools([run_sql_query])
+    llm = get_llm(temperature=0, model=settings.LLM_MODEL_SQL).bind_tools([run_sql_query])
 
     metrics_str = json.dumps(state.get("business_metrics", []), indent=2)
     kb_context = await get_kb_context(state.get("kb_id"), state["question"])
@@ -202,7 +204,9 @@ async def analysis_agent(state: AnalysisState) -> Dict[str, Any]:
             kb_context=kb_context or "None",
             golden_examples=golden_str,
             complexity_instruction=complexity_instruction,
+            running_summary=state.get("running_summary", "No previous context."),
             chat_history=chat_history,
+            procedural_skill=procedural_memory.get_procedural_knowledge(state.get("intent", "trend")),
             error_hint=error_hint
         )),
     ]
@@ -237,8 +241,8 @@ async def analysis_agent(state: AnalysisState) -> Dict[str, Any]:
     mapped_schema = schema_mapper.map_schema(relevant_schema)
     ddl_schema = _format_ddl_schema(mapped_schema)
     
-    # Retrieve historical context (Idea 16)
-    past_insights = insight_memory.get_related_insights(state["question"])
+    # Retrieve historical context (Episodic Memory)
+    past_insights = await episodic_memory.get_related_insights(state["tenant_id"], state["question"])
     history_str = ""
     if past_insights:
         history_str = "\nRelevant Past Analyses:\n" + "\n".join([f"- Q: {i['question']} -> SQL: {i['sql']}" for i in past_insights])

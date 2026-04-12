@@ -9,6 +9,8 @@ from app.modules.pdf.agents.chat_agent import chat_agent
 from app.modules.pdf.agents.retrieval_agent import adaptive_retrieval_agent
 from app.modules.pdf.agents.verifier_agent import verifier_agent
 from app.modules.pdf.agents.analyst_agent import analyst_agent
+from app.modules.pdf.agents.memory_manager_agent import memory_manager_agent
+from app.modules.pdf.agents.semantic_cache_agent import save_semantic_cache
 from app.modules.pdf.agents.output_assembler import output_assembler
 
 # Import existing flow agents
@@ -64,6 +66,8 @@ def build_pdf_graph(checkpointer: Any = None, mode: str = "deep_vision") -> Any:
     
     graph.add_node("verifier", verifier_agent)
     graph.add_node("analyst", analyst_agent)
+    graph.add_node("memory", memory_manager_agent)
+    graph.add_node("save_cache", save_semantic_cache)
     graph.add_node("output_assembler", output_assembler)
 
     # 2. Define Edges
@@ -105,8 +109,10 @@ def build_pdf_graph(checkpointer: Any = None, mode: str = "deep_vision") -> Any:
     graph.add_edge("text_synthesis", "verifier")
     graph.add_edge("ocr_synthesis", "verifier")
     
-    graph.add_edge("chat", "output_assembler")
-    graph.add_edge("analyst", "output_assembler")
+    graph.add_edge("chat", "memory")
+    graph.add_edge("analyst", "memory")
+    graph.add_edge("memory", "save_cache")
+    graph.add_edge("save_cache", "output_assembler")
     graph.add_edge("output_assembler", END)
 
     # Compile the graph without interrupt to allow full deep vision RAG analysis

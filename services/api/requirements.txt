@@ -64,3 +64,6 @@ slowapi==0.1.9
 # Logging
 structlog==24.4.0
 prometheus-fastapi-instrumentator
+
+# Graph DB
+neo4j==5.27.0

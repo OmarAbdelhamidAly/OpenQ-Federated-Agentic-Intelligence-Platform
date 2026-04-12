@@ -1,6 +1,6 @@
 # 📡 API Documentation
 
-**Insightify — Autonomous Enterprise Data Intelligence Platform**
+**OpenQ — Autonomous Enterprise Data Intelligence Platform**
 Base URL: `http://localhost:8002/api/v1`
 
 All endpoints accept and return `application/json` unless noted.
@@ -668,7 +668,7 @@ The job proceeds identically to a `POST /analysis/query` after transcription. Us
 
 ## 11. Superset
 
-Embeds Apache Superset as an analytics companion for advanced dashboarding alongside Insightify's agentic analysis.
+Embeds Apache Superset as an analytics companion for advanced dashboarding alongside OpenQ's agentic analysis.
 
 ### GET /superset/embed
 

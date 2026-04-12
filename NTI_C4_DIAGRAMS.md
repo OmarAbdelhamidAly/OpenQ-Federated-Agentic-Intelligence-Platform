@@ -1,6 +1,6 @@
 # C4 Architecture Diagrams
 
-**Insightify — Autonomous Enterprise Data Intelligence Platform**
+**OpenQ — Autonomous Enterprise Data Intelligence Platform**
 
 > C4 Model: four levels of zoom — Context → Container → Component → Code.
 > Each diagram narrows scope. Start at Level 1 for the big picture.
@@ -28,7 +28,7 @@ graph TB
     scales the platform via
     Docker Compose / Kubernetes"]
 
-    System["🤖 Insightify
+    System["🤖 OpenQ
     Autonomous multi-tenant SaaS platform.
     Turns raw data into executive insights
     via multi-agent LangGraph pipelines.

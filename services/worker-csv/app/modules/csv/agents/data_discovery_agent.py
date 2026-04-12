@@ -94,6 +94,25 @@ async def data_discovery_agent(state: AnalysisState) -> Dict[str, Any]:
         "suggested_questions": suggested,
     }
 
+    # ── Neo4j Knowledge Graph Sync (Universal Synthesis Layer) ──────
+    try:
+        from app.infrastructure.neo4j_adapter import Neo4jAdapter
+        neo4j = Neo4jAdapter()
+        if source_id:
+            # For CSV, we treat the file as a single table
+            neo4j.batch_upsert_data_schema(
+                source_id=source_id,
+                tables=[{
+                    "name": table_name,
+                    "columns": [{"name": c["name"], "dtype": c["dtype"], "summary": f"Unique: {c['unique_count']}, Null: {c['null_pct']}%"} for c in columns_info]
+                }]
+            )
+            from structlog import get_logger
+            get_logger("csv.data_discovery").info("neo4j_csv_schema_sync_done", source_id=source_id)
+    except Exception as neo_err:
+        from structlog import get_logger
+        get_logger("csv.data_discovery").warning("neo4j_csv_sync_failed_secondary", error=str(neo_err))
+
     return {
         "schema_summary": schema_summary,
         "data_quality_score": quality_score,

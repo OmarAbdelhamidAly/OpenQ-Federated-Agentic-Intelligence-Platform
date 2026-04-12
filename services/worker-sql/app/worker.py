@@ -282,19 +282,20 @@ async def _execute_source_discovery(source_id: str, user_id: str):
         logger.info("discovery_started", source_id=source_id, type=source.type)
         
         try:
-            schema_json = {}
             if source.type == "sql":
-                from app.modules.sql.utils.schema_utils import _profile_sqlite
-                # If it's a file-based sqlite
-                if source.file_path and os.path.exists(source.file_path):
-                    schema_json = _profile_sqlite(source.file_path)
-                else:
-                    # Could be a direct DB connection if we added config_encrypted
-                    pass
-            
-            source.schema_json = schema_json
-            source.indexing_status = "done"
-            await db.commit()
+                from app.modules.sql.agents.strategic_profiler_agent import strategic_sql_profiler
+                # Strategic profiling includes LLM enrichment and Neo4j sync
+                result = await strategic_sql_profiler(source_id)
+                if "error" in result:
+                     raise Exception(result["error"])
+                
+                logger.info("strategic_discovery_complete", source_id=source_id)
+                # Trigger Nexus Stitching
+                try:
+                    celery_app.send_task("nexus.discovery", args=[source_id], queue="pillar.nexus")
+                except Exception as e:
+                    logger.warning("nexus_stitching_trigger_failed", error=str(e))
+                return
             
             # Trigger Auto-Analysis
             celery_app.send_task(

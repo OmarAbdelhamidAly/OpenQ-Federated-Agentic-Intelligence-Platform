@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Users, UserPlus, Search, Filter, Trash2, Loader2 } from 'lucide-react';
-import { UserAPI, DataSourcesAPI, GroupsAPI, type User, type DataSource } from '../../services/api';
+import { UserAPI, DataSourcesAPI, GroupsAPI } from '../../services/api';
+import type { User, DataSource } from '../../types';
 
 export default function TeamManagementView() {
   const [team, setTeam] = useState<User[]>([]);
@@ -126,7 +127,7 @@ export default function TeamManagementView() {
              </div>
              <h1 className="text-4xl font-black text-white tracking-tight">Team Management</h1>
              <p className="text-slate-400 mt-2 font-medium max-w-xl">
-               Manage organizational hierarchy, groups, and cross-team collaboration protocols.
+                Manage organizational hierarchy, groups, and cross-team collaboration protocols.
              </p>
           </div>
 
@@ -207,11 +208,11 @@ export default function TeamManagementView() {
                           <td className="px-6 py-5">
                             <div className="flex items-center gap-4">
                               <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[var(--primary)]/20 to-[var(--primary-alt)]/20 border border-[var(--primary)]/20 flex items-center justify-center font-black text-[var(--primary)] text-xs shadow-inner">
-                                {member.email.charAt(0).toUpperCase()}
+                                {(member.email || '?').charAt(0).toUpperCase()}
                               </div>
                               <div>
-                                <p className="text-sm font-black text-white group-hover:text-[var(--primary)] transition-colors">{member.email.split('@')[0]}</p>
-                                <span className="text-[10px] font-bold text-slate-500">{member.email}</span>
+                                <p className="text-sm font-black text-white group-hover:text-[var(--primary)] transition-colors">{(member.email || 'N/A').split('@')[0]}</p>
+                                <span className="text-[10px] font-bold text-slate-500">{member.email || 'No email provided'}</span>
                               </div>
                             </div>
                           </td>
@@ -234,7 +235,7 @@ export default function TeamManagementView() {
                                onClick={(e) => { e.stopPropagation(); handleRemove(member.id); }}
                                className="p-2 text-slate-600 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-all"
                              >
-                               <Trash2 className="w-4 h-4" />
+                                <Trash2 className="w-4 h-4" />
                              </button>
                           </td>
                         </tr>

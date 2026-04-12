@@ -11,36 +11,11 @@ import PortalDashboard from './components/Dashboard/PortalDashboard';
 import SentinelNexus from './components/Governance/SentinelNexus';
 import TeamManagementView from './components/Governance/TeamManagementView';
 import AboutUs from './components/Dashboard/AboutUs';
+import NexusDashboard from './components/NexusDashboard';
 import { AuthAPI } from './services/api';
-
-// ─── Types ────────────────────────────────────────────────────────────────────
-
-interface BrandingConfig {
-  primary_color?: string;
-  secondary_color?: string;
-}
-
-interface AuthUser {
-  id: string;
-  email?: string;
-  role: string;
-  tenant_id: string;
-  branding_config?: BrandingConfig;
-}
-
-type ViewKey =
-  | 'about'
-  | 'dashboard'
-  | 'csv'
-  | 'sql'
-  | 'pdf'
-  | 'json'
-  | 'sentinel'
-  | 'team';
-
-type PortalType = Extract<ViewKey, 'csv' | 'sql' | 'pdf' | 'json'>;
-
-const PORTAL_TYPES: PortalType[] = ['csv', 'sql', 'pdf', 'json'];
+import { useAppStore } from './store/appStore';
+import type { AuthUser, BrandingConfig, PortalType } from './types';
+import { PORTAL_TYPES } from './types';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -86,47 +61,17 @@ function applyBranding(config: BrandingConfig): void {
   }
 }
 
-// ─── Storage helpers ──────────────────────────────────────────────────────────
-
-const STORAGE_KEYS = {
-  token: 'auth_token',
-  refresh: 'auth_refresh_token',
-  user: 'auth_user',
-} as const;
-
-function saveAuth(token: string, refreshToken: string, user: AuthUser): void {
-  localStorage.setItem(STORAGE_KEYS.token, token);
-  localStorage.setItem(STORAGE_KEYS.refresh, refreshToken);
-  localStorage.setItem(STORAGE_KEYS.user, JSON.stringify(user));
-}
-
-function clearAuthStorage(): void {
-  Object.values(STORAGE_KEYS).forEach((k) => localStorage.removeItem(k));
-}
-
-function loadAuthFromStorage(): { token: string; user: AuthUser } | null {
-  const token = localStorage.getItem(STORAGE_KEYS.token);
-  const refresh = localStorage.getItem(STORAGE_KEYS.refresh);
-  const rawUser = localStorage.getItem(STORAGE_KEYS.user);
-
-  if (!token || !refresh || !rawUser) return null;
-
-  try {
-    const user = JSON.parse(rawUser) as AuthUser;
-    if (user && typeof user === 'object') return { token, user };
-  } catch {
-    // malformed JSON — treat as missing
-  }
-  return null;
-}
-
 // ─── App ──────────────────────────────────────────────────────────────────────
 
 function App() {
-  const [activeSourceIds, setActiveSourceIds] = useState<string[]>([]);
-  const [currentView, setCurrentView] = useState<ViewKey>('about');
-  const [user, setUser] = useState<AuthUser | null>(null);
-  const [token, setToken] = useState<string | null>(null);
+  const {
+    currentView,
+    user,
+    token,
+    setAuth,
+    clearAuth,
+  } = useAppStore();
+
   const [isInitializing, setIsInitializing] = useState(true);
 
   const {
@@ -141,19 +86,11 @@ function App() {
 
   const handleLogin = useCallback(
     (newToken: string, newRefreshToken: string, newUser: AuthUser) => {
-      setToken(newToken);
-      setUser(newUser);
-      saveAuth(newToken, newRefreshToken, newUser);
+      setAuth(newToken, newRefreshToken, newUser);
       if (newUser.branding_config) applyBranding(newUser.branding_config);
     },
-    [],
+    [setAuth],
   );
-
-  const clearAuth = useCallback(() => {
-    clearAuthStorage();
-    setToken(null);
-    setUser(null);
-  }, []);
 
   // ── Bootstrap authentication on mount ────────────────────────────────────
 
@@ -175,11 +112,9 @@ function App() {
           console.error('Error getting Auth0 access token', e);
         }
       } else {
-        const saved = loadAuthFromStorage();
-        if (saved) {
-          setToken(saved.token);
-          setUser(saved.user);
-          if (saved.user.branding_config) applyBranding(saved.user.branding_config);
+        const savedToken = useAppStore.getState().token;
+        if (savedToken && user) {
+          if (user.branding_config) applyBranding(user.branding_config);
         } else {
           clearAuth();
         }
@@ -207,39 +142,17 @@ function App() {
     }
   }, [isAuthenticated, auth0Logout, clearAuth]);
 
-  // ── Source selection helpers ──────────────────────────────────────────────
-
-  const handleToggleSource = useCallback((id: string | null) => {
-    if (!id) { setActiveSourceIds([]); return; }
-    setActiveSourceIds((prev) =>
-      prev.includes(id) ? prev.filter((i) => i !== id) : [...prev, id],
-    );
-  }, []);
-
-  const handleSelectSource = useCallback(
-    (id: string | null, view: ViewKey = 'dashboard') => {
-      if (id) {
-        setActiveSourceIds([id]);
-        setCurrentView(view);
-      } else {
-        setActiveSourceIds([]);
-      }
-    },
-    [],
-  );
-
   // ── View renderer ─────────────────────────────────────────────────────────
 
   const renderContent = () => {
     if (currentView === 'dashboard') {
-      return <ChatInterface activeSourceIds={activeSourceIds} />;
+      return <ChatInterface />;
     }
 
     if ((PORTAL_TYPES as string[]).includes(currentView)) {
       return (
         <PortalDashboard
           type={currentView as PortalType}
-          onSelectSource={(id) => handleSelectSource(id ?? undefined)}
         />
       );
     }
@@ -248,7 +161,8 @@ function App() {
       case 'sentinel': return <SentinelNexus />;
       case 'team':     return <TeamManagementView />;
       case 'about':    return <AboutUs />;
-      default:         return <ChatInterface activeSourceIds={activeSourceIds} />;
+      case 'nexus':    return <NexusDashboard />;
+      default:         return <ChatInterface />;
     }
   };
 
@@ -279,15 +193,7 @@ function App() {
     <div className="min-h-screen bg-transparent text-slate-200 flex overflow-hidden relative">
       <NeuralBackground />
 
-      <Sidebar
-        activeSourceIds={activeSourceIds}
-        onToggleSource={handleToggleSource}
-        onSelectSource={handleSelectSource}
-        currentView={currentView}
-        onViewChange={(v) => setCurrentView(v as ViewKey)}
-        user={user}
-        onLogout={handleLogout}
-      />
+      <Sidebar onLogout={handleLogout} />
 
       <main className="flex-1 flex flex-col relative overflow-hidden bg-gradient-to-br from-indigo-500/5 via-transparent to-purple-500/5">
         {renderContent()}

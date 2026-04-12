@@ -1,16 +1,14 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { Send, Sparkles, Loader2, Database, MessageSquare, Mic, Zap, CheckCircle, ArrowRight, Flag, ShieldCheck } from 'lucide-react';
-import { AnalysisAPI, DataSourcesAPI, VoiceAPI } from '../../services/api';
-import type { AnalysisJob } from '../../services/api';
-import { recorder } from '../../utils/audio';
+import { Database, MessageSquare, RefreshCw } from 'lucide-react';
+import { AnalysisAPI, DataSourcesAPI } from '../../services/api';
+import { useAppStore } from '../../store/appStore';
+import type { AnalysisJob, Message } from '../../types';
 import MessageBubble from './MessageBubble';
 import { useAnalysisPolling } from '../../hooks/useAnalysisPolling';
-import type { Message } from '../../hooks/useAnalysisPolling';
 import DataProfiler from '../Dashboard/DataProfiler';
-
-interface ChatInterfaceProps {
-  activeSourceIds: string[];
-}
+import HITLCard from './HITLCard';
+import ChatInput from './ChatInput';
+import { EmptyStateSelectSource, EmptyStateWelcome } from './EmptyStates';
 
 interface HITLState {
   jobId: string;
@@ -18,12 +16,14 @@ interface HITLState {
   isActing: boolean;
 }
 
-export default function ChatInterface({ activeSourceIds }: ChatInterfaceProps) {
+export default function ChatInterface() {
+  const { activeSourceIds } = useAppStore();
   const depthIndex = 3;
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [viewMode, setViewMode] = useState<'chat' | 'profile'>('chat');
   const [hitlState, setHitlState] = useState<HITLState | null>(null);
+  const [sessionId, setSessionId] = useState<string>('');
 
   // Storage key based on active sources
   const storageKey = activeSourceIds.length > 0 ? `chat_history_${activeSourceIds.join('_')}` : null;
@@ -34,7 +34,11 @@ export default function ChatInterface({ activeSourceIds }: ChatInterfaceProps) {
     if (storageKey) {
       const saved = localStorage.getItem(storageKey);
       if (saved) {
-        try { setMessages(JSON.parse(saved)); } catch (e) { setMessages([]); }
+        try {
+          setMessages(JSON.parse(saved));
+        } catch (e) {
+          setMessages([]);
+        }
       } else {
         setMessages([]);
       }
@@ -43,12 +47,30 @@ export default function ChatInterface({ activeSourceIds }: ChatInterfaceProps) {
     }
   }, [storageKey]);
 
+  // Generate a new session ID when sources change
+  useEffect(() => {
+    if (activeSourceIds.length > 0) {
+      setSessionId(crypto.randomUUID());
+    } else {
+      setSessionId('');
+    }
+  }, [activeSourceIds]);
+
   // Save chat history to localStorage whenever it changes
   useEffect(() => {
     if (storageKey && messages.length > 0) {
       localStorage.setItem(storageKey, JSON.stringify(messages));
     }
   }, [messages, storageKey]);
+
+  const handleNewChat = () => {
+    setSessionId(crypto.randomUUID());
+    setMessages([]);
+    setHitlState(null);
+    if (storageKey) {
+      localStorage.removeItem(storageKey);
+    }
+  };
 
   const [schema, setSchema] = useState<any>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -57,36 +79,35 @@ export default function ChatInterface({ activeSourceIds }: ChatInterfaceProps) {
   const userScrolledUp = useRef(false);
   const { isProcessing, setIsProcessing, startPolling } = useAnalysisPolling();
 
-  // Track if user has scrolled up manually
   const handleScroll = useCallback(() => {
     const container = scrollContainerRef.current;
     if (!container) return;
     const distanceFromBottom = container.scrollHeight - container.scrollTop - container.clientHeight;
-    // If user is more than 150px from the bottom, consider them "scrolled up"
     userScrolledUp.current = distanceFromBottom > 150;
   }, []);
 
-  const scrollToBottom = useCallback((force = false) => {
-    if (viewMode !== 'chat') return;
-    if (!force && userScrolledUp.current) return; // respect user scroll position
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [viewMode]);
+  const scrollToBottom = useCallback(
+    (force = false) => {
+      if (viewMode !== 'chat') return;
+      if (!force && userScrolledUp.current) return;
+      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    },
+    [viewMode]
+  );
 
-  // Auto-scroll only when new messages arrive and the user is near the bottom
-  useEffect(() => { scrollToBottom(); }, [messages]);
+  useEffect(() => {
+    scrollToBottom();
+  }, [messages, scrollToBottom]);
 
-  // When switching to chat view always go to bottom
   useEffect(() => {
     if (viewMode === 'chat') {
       userScrolledUp.current = false;
       scrollToBottom(true);
     }
-  }, [viewMode]);
+  }, [viewMode, scrollToBottom]);
 
-  // Re-focus input after processing finishes
   useEffect(() => {
     if (!isProcessing) {
-      // Small delay to make sure the DOM has updated
       setTimeout(() => inputRef.current?.focus(), 100);
     }
   }, [isProcessing]);
@@ -94,8 +115,8 @@ export default function ChatInterface({ activeSourceIds }: ChatInterfaceProps) {
   useEffect(() => {
     if (activeSourceIds.length === 1) {
       DataSourcesAPI.get(activeSourceIds[0])
-        .then(res => setSchema(res.schema_json))
-        .catch(err => console.error("Failed to fetch schema", err));
+        .then((res) => setSchema(res.schema_json))
+        .catch((err) => console.error('Failed to fetch schema', err));
     } else {
       setSchema(null);
       setViewMode('chat');
@@ -103,9 +124,7 @@ export default function ChatInterface({ activeSourceIds }: ChatInterfaceProps) {
   }, [activeSourceIds]);
 
   const onMessageUpdate = (id: string, updates: Partial<Message>) => {
-    setMessages(prev => prev.map(msg =>
-      msg.id === id ? { ...msg, ...updates } : msg
-    ));
+    setMessages((prev) => prev.map((msg) => (msg.id === id ? { ...msg, ...updates } : msg)));
   };
 
   const handleHITL = (jobId: string, job: AnalysisJob) => {
@@ -114,38 +133,36 @@ export default function ChatInterface({ activeSourceIds }: ChatInterfaceProps) {
 
   const handleContinue = async () => {
     if (!hitlState) return;
-    setHitlState(prev => prev ? { ...prev, isActing: true } : null);
+    setHitlState((prev) => (prev ? { ...prev, isActing: true } : null));
     try {
       await AnalysisAPI.approveJob(hitlState.jobId);
       setHitlState(null);
-      // Resume polling for the continued job
-      const continuedMsgId = (Date.now()).toString();
+      const continuedMsgId = Date.now().toString();
       const continuedMsg: Message = {
         id: continuedMsgId,
         role: 'assistant',
         isStreaming: true,
-        job: { ...hitlState.job, status: 'running' }
+        job: { ...hitlState.job, status: 'running' },
       };
-      setMessages(prev => [...prev, continuedMsg]);
+      setMessages((prev) => [...prev, continuedMsg]);
       await startPolling(hitlState.jobId, continuedMsgId, onMessageUpdate, () => {}, handleHITL);
     } catch (e) {
-      console.error("Continue failed", e);
-      setHitlState(prev => prev ? { ...prev, isActing: false } : null);
+      console.error('Continue failed', e);
+      setHitlState((prev) => (prev ? { ...prev, isActing: false } : null));
     }
   };
 
   const handleFinalize = async () => {
     if (!hitlState) return;
     setHitlState(null);
-    // The synthesis_report already contains all gathered insights. Show it.
     const finalMsg: Message = {
       id: Date.now().toString(),
       role: 'assistant',
       isStreaming: false,
       job: { ...hitlState.job, status: 'done' },
-      content: hitlState.job.synthesis_report || "Analysis finalized with available insights."
+      content: hitlState.job.synthesis_report || 'Analysis finalized with available insights.',
     };
-    setMessages(prev => [...prev, finalMsg]);
+    setMessages((prev) => [...prev, finalMsg]);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -156,14 +173,14 @@ export default function ChatInterface({ activeSourceIds }: ChatInterfaceProps) {
     const systemId = (Date.now() + 1).toString();
     const systemMessage: Message = { id: systemId, role: 'assistant', isStreaming: true };
 
-    setMessages(prev => [...prev, userMessage, systemMessage]);
+    setMessages((prev) => [...prev, userMessage, systemMessage]);
     setHitlState(null);
     setInput('');
 
     try {
       const validHistory = messages
         .slice(-3)
-        .map(m => ({ role: m.role, content: m.content || "" }));
+        .map((m) => ({ role: m.role, content: m.content || '' }));
 
       const primarySourceId = activeSourceIds[0];
       const multiSourceIds = activeSourceIds.length > 1 ? activeSourceIds.slice(1) : undefined;
@@ -173,17 +190,21 @@ export default function ChatInterface({ activeSourceIds }: ChatInterfaceProps) {
         primarySourceId,
         multiSourceIds,
         depthIndex,
-        validHistory
+        validHistory,
+        sessionId
       );
       await startPolling(job_id, systemId, onMessageUpdate, () => {}, handleHITL);
     } catch (error: any) {
-      console.error("Submit error", error);
-      let errorMessage = "Sorry, there was an error submitting your request.";
+      console.error('Submit error', error);
+      let errorMessage = 'Sorry, there was an error submitting your request.';
       if (error.response) {
         if (error.response.status === 423) {
-          errorMessage = error.response.data?.detail || "⏳ PDF is still being indexed. Please wait before asking questions.";
+          errorMessage =
+            error.response.data?.detail ||
+            '⏳ PDF is still being indexed. Please wait before asking questions.';
         } else if (error.response.status === 422) {
-          errorMessage = error.response.data?.detail || "❌ PDF indexing failed. Please re-upload the document.";
+          errorMessage =
+            error.response.data?.detail || '❌ PDF indexing failed. Please re-upload the document.';
         } else if (error.response.data?.detail) {
           errorMessage = error.response.data.detail;
         }
@@ -201,18 +222,39 @@ export default function ChatInterface({ activeSourceIds }: ChatInterfaceProps) {
         <div className="absolute bottom-[-10%] right-[-5%] w-[30%] h-[30%] bg-purple-500/10 blur-[100px] rounded-full animate-blob delay-1000 opacity-40"></div>
         <div className="absolute top-[30%] right-[10%] w-[20%] h-[20%] bg-sky-500/5 blur-[80px] rounded-full animate-blob delay-500"></div>
       </div>
+
+      {/* New Chat Button */}
+      {activeSourceIds.length > 0 && (
+        <div className="absolute top-4 left-8 z-10 flex gap-1 bg-[#171033]/60 backdrop-blur-xl p-1 border border-slate-700/50 rounded-2xl shadow-2xl">
+          <button
+            onClick={handleNewChat}
+            className="flex items-center gap-2 px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all text-slate-500 hover:text-emerald-400 hover:bg-emerald-500/10"
+          >
+            <RefreshCw className="w-3.5 h-3.5" /> New Chat
+          </button>
+        </div>
+      )}
+
       {/* View Toggle - Only for single source profiling */}
       {activeSourceIds.length === 1 && (
         <div className="absolute top-4 right-8 z-10 flex gap-1 bg-[#171033]/60 backdrop-blur-xl p-1 border border-slate-700/50 rounded-2xl shadow-2xl">
           <button
             onClick={() => setViewMode('chat')}
-            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${viewMode === 'chat' ? 'bg-[var(--primary)] text-white shadow-lg shadow-[var(--primary)]/20' : 'text-slate-500 hover:text-slate-200'}`}
+            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${
+              viewMode === 'chat'
+                ? 'bg-[var(--primary)] text-white shadow-lg shadow-[var(--primary)]/20'
+                : 'text-slate-500 hover:text-slate-200'
+            }`}
           >
             <MessageSquare className="w-3.5 h-3.5" /> Intelligence
           </button>
           <button
             onClick={() => setViewMode('profile')}
-            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${viewMode === 'profile' ? 'bg-[var(--primary)] text-white shadow-lg shadow-[var(--primary)]/20' : 'text-slate-500 hover:text-slate-200'}`}
+            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${
+              viewMode === 'profile'
+                ? 'bg-[var(--primary)] text-white shadow-lg shadow-[var(--primary)]/20'
+                : 'text-slate-500 hover:text-slate-200'
+            }`}
           >
             <Database className="w-3.5 h-3.5" /> Profiler
           </button>
@@ -224,24 +266,29 @@ export default function ChatInterface({ activeSourceIds }: ChatInterfaceProps) {
           <DataProfiler schema={schema} />
         </div>
       ) : (
-        <div ref={scrollContainerRef} onScroll={handleScroll} className="flex-1 overflow-y-auto px-4 py-4 pt-4 sm:px-8 xl:px-20 custom-scroll">
+        <div
+          ref={scrollContainerRef}
+          onScroll={handleScroll}
+          className="flex-1 overflow-y-auto px-4 py-4 pt-4 sm:px-8 xl:px-20 custom-scroll"
+        >
           {activeSourceIds.length === 0 ? (
             <EmptyStateSelectSource />
           ) : messages.length === 0 ? (
             <EmptyStateWelcome setInput={setInput} schema={schema} />
           ) : (
             <div className="max-w-full xl:max-w-[95%] mx-auto space-y-8 pb-64 px-2">
-              {Array.isArray(messages) && messages.map((msg) => (
-                <MessageBubble 
-                  key={msg.id} 
-                  message={msg} 
-                  onApproveSuccess={() => {
-                    if (msg.job?.id) {
-                      startPolling(msg.job.id, msg.id, onMessageUpdate, () => {}, handleHITL);
-                    }
-                  }}
-                />
-              ))}
+              {Array.isArray(messages) &&
+                messages.map((msg) => (
+                  <MessageBubble
+                    key={msg.id}
+                    message={msg}
+                    onApproveSuccess={() => {
+                      if (msg.job?.id) {
+                        startPolling(msg.job.id, msg.id, onMessageUpdate, () => {}, handleHITL);
+                      }
+                    }}
+                  />
+                ))}
 
               {/* ── HITL Approval Card ───────────────────────────────── */}
               {hitlState && (
@@ -267,299 +314,6 @@ export default function ChatInterface({ activeSourceIds }: ChatInterfaceProps) {
         disabled={activeSourceIds.length === 0 || viewMode === 'profile' || !!hitlState}
         inputRef={inputRef}
       />
-    </div>
-  );
-}
-
-// ── HITL Card ──────────────────────────────────────────────────────────────────
-function HITLCard({
-  job,
-  isActing,
-  onContinue,
-  onFinalize,
-}: {
-  job: AnalysisJob;
-  isActing: boolean;
-  onContinue: () => void;
-  onFinalize: () => void;
-}) {
-  const pillars = job.required_pillars || [];
-  const currentIndex = job.complexity_index ?? 1; // 1-based, already completed
-
-  const nextPillarName = pillars[currentIndex]
-    ? pillars[currentIndex].toUpperCase()
-    : null;
-
-  return (
-    <div className="animate-in slide-in-from-bottom-4 duration-500">
-      {/* Progress Stepper */}
-      <div className="flex items-center justify-center gap-2 mb-6">
-        {pillars.map((pillar: string, i: number) => {
-          const isDone = i < currentIndex;
-          const isCurrent = i === currentIndex - 1;
-          const isNext = i === currentIndex;
-          return (
-            <div key={i} className="flex items-center gap-2">
-              <div className={`
-                flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[10px] font-black uppercase tracking-widest border transition-all
-                ${isDone ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400' : ''}
-                ${isCurrent ? 'bg-[var(--primary)]/10 border-[var(--primary)]/40 text-[var(--primary)]' : ''}
-                ${isNext ? 'bg-amber-500/10 border-amber-500/30 text-amber-400 animate-pulse' : ''}
-                ${!isDone && !isCurrent && !isNext ? 'bg-slate-800/50 border-slate-700/30 text-slate-600' : ''}
-              `}>
-                {isDone && <CheckCircle className="w-3 h-3" />}
-                {isCurrent && <ShieldCheck className="w-3 h-3" />}
-                {isNext && <ArrowRight className="w-3 h-3" />}
-                {pillar.toUpperCase()}
-              </div>
-              {i < pillars.length - 1 && (
-                <div className={`w-6 h-px ${i < currentIndex - 1 ? 'bg-emerald-500' : 'bg-slate-700'}`} />
-              )}
-            </div>
-          );
-        })}
-      </div>
-
-      {/* Main Card */}
-      <div className="relative rounded-[28px] border border-amber-500/20 bg-gradient-to-br from-amber-500/5 via-slate-900/80 to-slate-900/80 backdrop-blur-xl p-6 shadow-2xl shadow-amber-500/5">
-        <div className="absolute -inset-px rounded-[28px] bg-gradient-to-br from-amber-500/10 to-transparent opacity-50 pointer-events-none" />
-
-        <div className="flex items-start gap-4 mb-5">
-          <div className="w-10 h-10 rounded-2xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center shrink-0">
-            <ShieldCheck className="w-5 h-5 text-amber-400" />
-          </div>
-          <div>
-            <p className="text-[10px] font-black text-amber-400 uppercase tracking-[0.2em] mb-1">
-              🛡️ Insightify — Governance Checkpoint {currentIndex}/{pillars.length}
-            </p>
-            <h3 className="text-white font-black text-base">
-              Step {currentIndex} Complete — Awaiting Command
-            </h3>
-            <p className="text-slate-400 text-xs font-medium mt-1">
-              {pillars[currentIndex - 1]?.toUpperCase()} specialist has delivered its findings.
-              {nextPillarName
-                ? ` Ready to deploy ${nextPillarName} specialist.`
-                : ' All specialists have reported. Ready to finalize.'}
-            </p>
-          </div>
-        </div>
-
-        {/* Partial Synthesis Preview */}
-        {job.synthesis_report && (
-          <div className="mb-5 p-4 rounded-2xl bg-slate-900/60 border border-slate-700/30">
-            <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest mb-2">
-              📋 Accumulated Intelligence
-            </p>
-            <p className="text-xs text-slate-300 leading-relaxed line-clamp-4 font-medium">
-              {job.synthesis_report.replace(/###.*?\n/g, '').trim()}
-            </p>
-          </div>
-        )}
-
-        {/* Action Buttons */}
-        <div className="flex gap-3">
-          {nextPillarName && (
-            <button
-              onClick={onContinue}
-              disabled={isActing}
-              className="flex-1 flex items-center justify-center gap-2 py-3.5 px-5 rounded-2xl bg-[var(--primary)] hover:brightness-110 text-white text-xs font-black uppercase tracking-widest transition-all active:scale-95 disabled:opacity-50 shadow-lg shadow-[var(--primary)]/20"
-            >
-              {isActing ? (
-                <Loader2 className="w-4 h-4 animate-spin" />
-              ) : (
-                <ArrowRight className="w-4 h-4" />
-              )}
-              Continue → {nextPillarName} Specialist
-            </button>
-          )}
-          <button
-            onClick={onFinalize}
-            disabled={isActing}
-            className="flex items-center justify-center gap-2 py-3.5 px-5 rounded-2xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-black uppercase tracking-widest border border-slate-700/50 transition-all active:scale-95 disabled:opacity-50"
-          >
-            <Flag className="w-4 h-4" />
-            Finalize Report
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// ── Sub-components ─────────────────────────────────────────────────────────────
-function EmptyStateSelectSource() {
-  const steps = [
-    {
-      id: "01",
-      title: "Target Sources",
-      ar: "حدد المصادر",
-      desc: "Select CSV, SQL, or PDFs from the nexus sidebar to begin.",
-      icon: <Database className="w-5 h-5" />
-    },
-    {
-      id: "02",
-      title: "Cross-Correlate",
-      ar: "ربط البيانات",
-      desc: "Insightify automatically links disparate sources in memory.",
-      icon: <Sparkles className="w-5 h-5" />
-    },
-    {
-      id: "03",
-      title: "Synthesize",
-      ar: "التركيب الذكي",
-      desc: "Generate autonomous executive insights and unified reports.",
-      icon: <Zap className="w-5 h-5" />
-    }
-  ];
-
-  return (
-    <div className="flex flex-col items-center justify-center h-full text-center px-4 animate-in fade-in zoom-in duration-1000">
-      <div className="mb-12">
-        <div className="w-20 h-20 rounded-[32px] bg-[var(--primary)]/10 flex items-center justify-center mx-auto mb-6 relative">
-          <div className="absolute -inset-4 bg-[var(--primary)]/5 blur-2xl rounded-full animate-pulse"></div>
-          <Sparkles className="w-8 h-8 text-[var(--primary)] relative z-10" />
-        </div>
-        <h2 className="text-3xl font-black text-white tracking-tighter uppercase mb-2">Insightify</h2>
-        <p className="text-slate-500 text-[10px] font-black uppercase tracking-[0.3em]">Autonomous Multi-Source Synthesis</p>
-      </div>
-
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 max-w-4xl w-full">
-        {steps.map((step) => (
-          <div key={step.id} className="p-6 bg-white/5 border border-slate-800/50 rounded-[32px] flex flex-col items-center gap-4 group hover:border-[var(--primary)]/30 hover:bg-[var(--primary)]/5 transition-all">
-            <div className="w-10 h-10 rounded-2xl bg-slate-800 flex items-center justify-center text-slate-400 group-hover:bg-[var(--primary)] group-hover:text-white transition-all">
-              {step.icon}
-            </div>
-            <div>
-              <p className="text-[10px] font-black text-[var(--primary)] uppercase tracking-widest mb-1">Step {step.id}</p>
-              <h4 className="font-black text-white uppercase text-sm mb-1">{step.title}</h4>
-              <p className="text-[10px] text-slate-500 font-bold uppercase mb-3">{step.ar}</p>
-              <p className="text-[11px] text-slate-400 leading-relaxed font-medium">{step.desc}</p>
-            </div>
-          </div>
-        ))}
-      </div>
-
-      <div className="mt-12 flex items-center gap-3 py-2 px-4 rounded-full bg-slate-900/50 border border-slate-800">
-        <div className="w-2 h-2 rounded-full bg-[var(--primary)] animate-pulse" />
-        <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Awaiting Nexus Directive...</span>
-      </div>
-    </div>
-  );
-}
-
-function EmptyStateWelcome({ setInput, schema }: { setInput: (v: string) => void, schema?: any }) {
-  const suggestions: string[] = schema?.suggested_questions && schema.suggested_questions.length > 0
-    ? schema.suggested_questions
-    : [
-      "Summarize key anomalies in this dataset",
-      "Predict trends for the next fiscal quarter",
-      "Identify cross-source correlations",
-      "Analyze data quality and suggest fixes"
-    ];
-
-  return (
-    <div className="flex flex-col items-center justify-center h-full mt-20 text-center animate-in fade-in slide-in-from-bottom-8 duration-1000">
-      <h2 className="text-4xl font-black mb-6 bg-clip-text text-transparent bg-gradient-to-b from-white to-slate-500 tracking-tighter uppercase p-2">
-        Awaiting Directive
-      </h2>
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-3 max-w-2xl w-full">
-        {suggestions.map((s, i) => (
-          <button
-            key={i}
-            onClick={() => setInput(s)}
-            className="p-4 bg-white/5 border border-slate-800/50 rounded-2xl text-left hover:border-[var(--primary)]/40 hover:bg-[var(--primary)]/5 transition-all group"
-          >
-            <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest group-hover:text-[var(--primary)] mb-1">Inquiry Vector 0{i + 1}</p>
-            <p className="text-xs font-bold text-slate-300 group-hover:text-white">{s}</p>
-          </button>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-interface ChatInputProps {
-  input: string;
-  setInput: (val: string) => void;
-  handleSubmit: (e: React.FormEvent) => void;
-  isProcessing: boolean;
-  disabled: boolean;
-  inputRef?: React.RefObject<HTMLTextAreaElement>;
-}
-
-function ChatInput({ input, setInput, handleSubmit, isProcessing, disabled, inputRef }: ChatInputProps) {
-  const [isRecording, setIsRecording] = useState(false);
-
-  const handleVoiceSearch = async () => {
-    if (isRecording) {
-      try {
-        const blob = await recorder.stop();
-        setIsRecording(false);
-        const { text } = await VoiceAPI.stt(blob);
-        if (text) setInput(text);
-      } catch (e) {
-        console.error("STT failed", e);
-        setIsRecording(false);
-      }
-    } else {
-      try {
-        await recorder.start();
-        setIsRecording(true);
-      } catch (e) {
-        console.error("Mic access failed", e);
-        alert("Microphone access denied.");
-      }
-    }
-  };
-
-  return (
-    <div className="absolute bottom-0 w-full bg-gradient-to-t from-[#0a0d17] via-[#0a0d17]/95 to-transparent pt-20 pb-8 px-6 pointer-events-none">
-      <div className="max-w-full xl:max-w-[80%] mx-auto relative group pointer-events-auto px-4">
-        <div className="absolute -inset-1.5 bg-gradient-to-r from-indigo-500 to-purple-600 rounded-[34px] opacity-10 group-focus-within:opacity-40 group-hover:opacity-25 blur-2xl transition-all duration-700"></div>
-        <form onSubmit={handleSubmit} className="relative flex items-center bg-[#0d111c]/90 backdrop-blur-3xl border border-white/5 rounded-[28px] p-2.5 shadow-[0_20px_50px_rgba(0,0,0,0.5)] transition-all group-focus-within:border-indigo-500/50 group-focus-within:bg-[#0a0d17]">
-          <textarea
-            ref={inputRef}
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            placeholder={
-              disabled && !isProcessing
-                ? "Awaiting command — respond to the checkpoint above..."
-                : isProcessing
-                  ? "Processing... you can type your next question"
-                  : isRecording
-                    ? "Listening to directive..."
-                    : "Execute a complex analytical inquiry..."
-            }
-            disabled={disabled}
-            className={`resize-none flex-1 bg-transparent text-slate-200 placeholder-slate-600 px-5 py-4 outline-none min-h-[64px] custom-scroll text-sm font-bold transition-all ${isRecording ? 'text-red-400' : ''} ${disabled ? 'opacity-40' : ''}`}
-            rows={1}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' && !e.shiftKey) {
-                e.preventDefault();
-                handleSubmit(e);
-              }
-            }}
-          />
-          <div className="flex items-center gap-2 pr-2">
-            <button
-              type="button"
-              onClick={handleVoiceSearch}
-              disabled={disabled || isProcessing}
-              className={`p-3.5 rounded-2xl transition-all ${isRecording ? 'text-red-500 bg-red-500/10 animate-pulse' : 'text-slate-600 hover:text-[var(--primary)] hover:bg-[var(--primary)]/10'}`}
-            >
-              {isRecording ? <Loader2 className="w-5 h-5 animate-spin" /> : <Mic className="w-5 h-5" />}
-            </button>
-            <button
-              type="submit"
-              disabled={!input.trim() || disabled || isProcessing}
-              className="p-4 bg-[var(--primary)] hover:brightness-110 text-white rounded-2xl shadow-xl shadow-[var(--primary)]/20 disabled:opacity-30 disabled:grayscale transition-all active:scale-95 flex items-center justify-center shrink-0"
-            >
-              {isProcessing ? <Loader2 className="w-5 h-5 animate-spin" /> : <Send className="w-5 h-5" />}
-            </button>
-          </div>
-        </form>
-        <p className="text-[9px] font-black text-slate-500 uppercase tracking-[0.2em]">Groq Llama-3.3-70B</p>
-      </div>
     </div>
   );
 }

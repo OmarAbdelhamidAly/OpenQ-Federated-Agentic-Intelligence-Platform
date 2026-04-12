@@ -1,3 +1,4 @@
+from app.infrastructure.config import settings
 import os
 import uuid
 import structlog
@@ -172,7 +173,7 @@ Provide an answer based ONLY on the visual context provided. Answer in the same 
             content.append({"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{b64_img}"}})
 
         # We now use Groq Llama 3.2 Vision for maximum speed and performance
-        llm = get_llm(temperature=0, model="llama-3.2-11b-vision-preview")
+        llm = get_llm(temperature=0, model=settings.LLM_MODEL_VISION)
         res = await llm.ainvoke([HumanMessage(content=content)])
         
         visual_context = [{"page_number": page_nums[i], "image_base64": f"data:image/jpeg;base64,{s}"} for i, s in enumerate(base64_images)]

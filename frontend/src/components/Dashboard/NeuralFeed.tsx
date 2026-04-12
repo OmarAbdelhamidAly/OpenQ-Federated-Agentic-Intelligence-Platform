@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { AnalysisAPI } from '../../services/api';
-import type { AnalysisJob } from '../../services/api';
+import type { AnalysisJob } from '../../types';
 import { 
   Activity, 
   Database, 

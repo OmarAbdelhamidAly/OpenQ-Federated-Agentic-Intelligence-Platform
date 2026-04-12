@@ -1,3 +1,4 @@
+from app.infrastructure.config import settings
 """Fast Text Synthesis Agent — Master Orchestrator Node.
 
 This node performs final answer synthesis for text-heavy queries using 
@@ -34,7 +35,7 @@ async def fast_text_retrieval_agent(state: AnalysisState) -> Dict[str, Any]:
         context_text += f"--- [CHUNK {i+1} | PAGE {page}] ---\n{text}\n\n"
 
     # Synthesis via fast LLM (standard Chat model, no vision needed here)
-    llm = get_llm(temperature=0, model="llama-3.1-8b-instant")
+    llm = get_llm(temperature=0, model=settings.LLM_MODEL_PDF)
     
     history_context = ""
     if history:

@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { DataSourcesAPI, AnalysisAPI } from '../../services/api';
-import type { DataSource, AnalysisJob } from '../../services/api';
+import type { DataSource, AnalysisJob, PortalType } from '../../types';
+import { useAppStore } from '../../store/appStore';
 import { 
   FileText, 
   Database, 
@@ -13,15 +14,19 @@ import {
   Search,
   Upload,
   X,
-  Target
+  Target,
+  Code,
+  Image as ImageIcon,
+  Film,
+  Mic
 } from 'lucide-react';
 
 interface PortalDashboardProps {
-  type: 'csv' | 'sql' | 'pdf' | 'json';
-  onSelectSource: (id: string) => void;
+  type: PortalType;
 }
 
-export default function PortalDashboard({ type, onSelectSource }: PortalDashboardProps) {
+export default function PortalDashboard({ type }: PortalDashboardProps) {
+  const { selectSource } = useAppStore();
   const [sources, setSources] = useState<DataSource[]>([]);
   const [jobs, setJobs] = useState<AnalysisJob[]>([]);
   const [loading, setLoading] = useState(true);
@@ -31,7 +36,7 @@ export default function PortalDashboard({ type, onSelectSource }: PortalDashboar
   const [pendingFile, setPendingFile] = useState<File | null>(null);
   const [uploadCategory, setUploadCategory] = useState<string>('Finance');
   const [uploadAssetType, setUploadAssetType] = useState<string>('Select Type');
-  const [indexingMode, setIndexingMode] = useState<'deep_vision' | 'fast_text' | 'hybrid_ocr'>('deep_vision');
+  const [indexingMode, setIndexingMode] = useState<'deep_vision' | 'fast_text' | 'hybrid_ocr' | 'strategic_nexus'>('strategic_nexus');
   const [uploading, setUploading] = useState(false);
 
   const TAXONOMY: Record<string, { label: string, types: { slug: string, label: string }[] }> = {
@@ -195,6 +200,10 @@ export default function PortalDashboard({ type, onSelectSource }: PortalDashboar
     sql: { title: "SQL Oracle", icon: Database, color: "indigo", desc: "Relational Engine" },
     pdf: { title: "PDF Insight", icon: BookOpen, color: "red", desc: "Document Vision" },
     json: { title: "JSON Mapper", icon: Box, color: "orange", desc: "Object Graph" },
+    codebase: { title: "Codebase Context", icon: Code, color: "emerald", desc: "Software Architecture" },
+    image: { title: "Vision Analytics", icon: ImageIcon, color: "fuchsia", desc: "Spatial Insight" },
+    audio: { title: "Audio Intersect", icon: Mic, color: "pink", desc: "Acoustic Intelligence" },
+    video: { title: "Video Spatial", icon: Film, color: "purple", desc: "Temporal Analysis" },
   }[type];
 
   useEffect(() => {
@@ -277,7 +286,7 @@ export default function PortalDashboard({ type, onSelectSource }: PortalDashboar
                     }`}
                   >
                     <option disabled value="Select Type">Select Type</option>
-                    {TAXONOMY[uploadCategory]?.types.map(t => <option key={t.slug} value={t.slug}>{t.label}</option>)}
+                    {TAXONOMY[uploadCategory]?.types?.map(t => <option key={t.slug} value={t.slug}>{t.label}</option>)}
                   </select>
 
                   <div className="flex bg-black/40 border border-slate-700/50 p-1 rounded-2xl gap-1">
@@ -310,6 +319,16 @@ export default function PortalDashboard({ type, onSelectSource }: PortalDashboar
                       }`}
                     >
                       Hybrid
+                    </button>
+                    <button
+                      onClick={() => setIndexingMode('strategic_nexus')}
+                      className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${
+                        indexingMode === 'strategic_nexus' 
+                          ? 'bg-amber-500 text-white shadow-lg shadow-amber-500/20' 
+                          : 'text-slate-500 hover:text-slate-300'
+                      }`}
+                    >
+                      Strategic
                     </button>
                   </div>
                 </>
@@ -349,6 +368,7 @@ export default function PortalDashboard({ type, onSelectSource }: PortalDashboar
                      accept={
                        type === 'csv' ? '.csv,.xlsx' : 
                        type === 'sql' ? '.sqlite,.db,.sql' : 
+                       type === 'codebase' ? '.zip' : 
                        '.json'
                      } 
                    />
@@ -420,7 +440,7 @@ export default function PortalDashboard({ type, onSelectSource }: PortalDashboar
                 sources.map((source) => (
                   <div 
                     key={source.id}
-                    onClick={() => onSelectSource(source.id)}
+                    onClick={() => selectSource(source.id, 'dashboard')}
                     className="p-5 hover:bg-white/5 transition-all cursor-pointer group flex items-start justify-between"
                   >
                     <div className="flex items-start gap-4">
@@ -456,6 +476,9 @@ export default function PortalDashboard({ type, onSelectSource }: PortalDashboar
                                }`}>
                                  {source.schema_json?.indexing_mode === 'fast_text' && (
                                    <span className="bg-sky-500/10 text-sky-400 px-1.5 py-0.5 rounded border border-sky-500/20 leading-none">FAST</span>
+                                 )}
+                                 {source.schema_json?.indexing_mode === 'strategic_nexus' && (
+                                   <span className="bg-amber-500/10 text-amber-400 px-1.5 py-0.5 rounded border border-amber-500/20 leading-none">STRATEGIC</span>
                                  )}
                                  {source.indexing_status === 'done' ? 'Semantic Sync: 100%' : 
                                   source.indexing_status === 'running' ? 'Indexing Vectors...' : 

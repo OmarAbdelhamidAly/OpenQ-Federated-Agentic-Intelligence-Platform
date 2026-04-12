@@ -1,3 +1,4 @@
+from app.infrastructure.config import settings
 import structlog
 from typing import Dict, Any
 from app.infrastructure.llm import get_llm
@@ -14,7 +15,7 @@ async def chat_agent(state: AnalysisState) -> Dict[str, Any]:
     logger.info("conversational_chat_started", question=question)
     
     # We use a friendly, fast model for chat
-    llm = get_llm(temperature=0.7, model="llama-3.1-8b-instant")
+    llm = get_llm(temperature=0.7, model=settings.LLM_MODEL_PDF)
     
     history_context = ""
     if history:

@@ -1,14 +1,6 @@
 import { useState, useCallback } from 'react';
 import { AnalysisAPI } from '../services/api';
-import type { AnalysisJob } from '../services/api';
-
-export interface Message {
-  id: string;
-  role: 'user' | 'assistant';
-  content?: string;
-  job?: AnalysisJob;
-  isStreaming?: boolean;
-}
+import type { AnalysisJob, Message } from '../types';
 
 export function useAnalysisPolling() {
   const [isProcessing, setIsProcessing] = useState(false);

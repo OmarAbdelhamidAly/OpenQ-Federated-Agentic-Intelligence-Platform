@@ -15,6 +15,7 @@ from app.infrastructure.database.postgres import async_session_factory
 from app.models.knowledge import Document, KnowledgeBase
 from app.models.tenant import Tenant
 from app.modules.pdf.utils.qdrant_multivector import QdrantMultiVectorManager
+from app.modules.pdf.utils.taxonomy import get_document_taxonomy
 from sqlalchemy import select, update as sql_update
 from sqlalchemy.orm import selectinload
 
@@ -37,68 +38,7 @@ def _get_embedding_model():
         model_name="nomic-ai/nomic-embed-text-v1.5" # 768 dimensions
     )
 
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-#  HUMAN-AI SYNERGY: PURE CLASSIFICATION BY USER
-#
-#  With this approach, Gemini is completely removed from indexing.
-#  Classification is instantly mapped from the user's Hint, providing 
-#  100% deterministic, zero-cost, instantaneous metadata.
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-# Maps user-selected hint → static classification metadata (no AI needed)
-_HINT_TO_META: Dict[str, Dict[str, str]] = {
-    # ── Finance & Accounting ──
-    "invoice":          {"doc_type": "Invoice / Receipt",           "industry": "Finance & Accounting"},
-    "financial_report": {"doc_type": "Financial Report",            "industry": "Finance & Accounting"},
-    "tax_return":       {"doc_type": "Tax Return / Declaration",    "industry": "Finance & Accounting"},
-    "bank_statement":   {"doc_type": "Bank / Account Statement",    "industry": "Finance & Accounting"},
-    "purchase_order":   {"doc_type": "Purchase Order",              "industry": "Finance & Accounting"},
-    # ── Legal & Compliance ──
-    "contract":         {"doc_type": "Legal Contract / Agreement",  "industry": "Legal & Compliance"},
-    "nda":              {"doc_type": "Non-Disclosure Agreement",    "industry": "Legal & Compliance"},
-    "policy":           {"doc_type": "Policy / Compliance Document","industry": "Legal & Compliance"},
-    "audit_report":     {"doc_type": "Audit / Compliance Report",   "industry": "Legal & Compliance"},
-    # ── Human Resources ──
-    "hr_record":        {"doc_type": "HR / Personnel Record",       "industry": "Human Resources"},
-    "resume":           {"doc_type": "Resume / CV",                 "industry": "Human Resources"},
-    "perf_review":      {"doc_type": "Performance Review",          "industry": "Human Resources"},
-    # ── Medical & Healthcare ──
-    "medical_record":   {"doc_type": "Medical / Clinical Record",   "industry": "Medical & Healthcare"},
-    "prescription":     {"doc_type": "Medical Prescription",        "industry": "Medical & Healthcare"},
-    "lab_result":       {"doc_type": "Lab / Test Result",           "industry": "Medical & Healthcare"},
-    # ── Tech & Engineering ──
-    "tech_spec":        {"doc_type": "Technical Specification",     "industry": "Tech & Engineering"},
-    "api_doc":          {"doc_type": "API / Developer Documentation","industry": "Tech & Engineering"},
-    "arch_diagram":     {"doc_type": "Architecture Diagram / Doc",  "industry": "Tech & Engineering"},
-    # ── Logistics & Supply Chain ──
-    "bill_of_lading":   {"doc_type": "Bill of Lading",              "industry": "Logistics & Supply Chain"},
-    "customs_decl":     {"doc_type": "Customs Declaration",         "industry": "Logistics & Supply Chain"},
-    "inventory":        {"doc_type": "Inventory / Stock Report",    "industry": "Logistics & Supply Chain"},
-    # ── Real Estate ──
-    "lease_agreement":  {"doc_type": "Lease / Rental Agreement",    "industry": "Real Estate"},
-    "property_deed":    {"doc_type": "Property Deed / Title",       "industry": "Real Estate"},
-    # ── Construction & Engineering ──
-    "floor_plan":       {"doc_type": "Floor Plan / Blueprint",      "industry": "Construction & Engineering"},
-    "building_permit":  {"doc_type": "Building Permit / License",   "industry": "Construction & Engineering"},
-    "construction_contract": {"doc_type": "Construction Contract",  "industry": "Construction & Engineering"},
-    # ── General Business ──
-    "business_report":  {"doc_type": "Business / Strategy Report",  "industry": "General Business"},
-    "meeting_minutes":  {"doc_type": "Meeting Minutes",             "industry": "General Business"},
-    # ── Marketing & Strategy ──
-    "marketing_mat":    {"doc_type": "Marketing Material / Deck",   "industry": "Marketing & Strategy"},
-    "campaign_plan":    {"doc_type": "Campaign / Marketing Plan",   "industry": "Marketing & Strategy"},
-    "brand_guidelines": {"doc_type": "Brand Guidelines",            "industry": "Marketing & Strategy"},
-    # ── Literature & Education ──
-    "other_book":       {"doc_type": "Book / E-Book",               "industry": "Literature & Education"},
-    "other_manual":     {"doc_type": "Instruction Manual",          "industry": "Literature & Education"},
-    "textbook":         {"doc_type": "Textbook / Course Material",  "industry": "Literature & Education"},
-    # ── Academic & Research ──
-    "other_research":   {"doc_type": "Research Paper",              "industry": "Academic & Research"},
-    "other_article":    {"doc_type": "News Article / Blog",         "industry": "Academic & Research"},
-    "thesis":           {"doc_type": "Thesis / Dissertation",       "industry": "Academic & Research"},
-    # ── Other / Custom ──
-    "other_misc":       {"doc_type": "General Document",            "industry": "Other / Custom"},
-}
+# --- Centralized Taxonomy Moved to app.modules.pdf.utils.taxonomy ---
 
 def _build_static_metadata(hint: Optional[str] = None) -> Dict[str, Any]:
     """
@@ -119,21 +59,18 @@ def _build_static_metadata(hint: Optional[str] = None) -> Dict[str, Any]:
             "specialized_fields": {}
         }
     
-    # 1. Direct Slug Lookup (Fastest/Deterministic)
-    clean_hint = hint.strip().lower()
-    if clean_hint in _HINT_TO_META:
-        static_meta = _HINT_TO_META[clean_hint]
-        return {
-            "doc_type": static_meta["doc_type"],
-            "industry": static_meta["industry"],
-            "source_hint": hint,
-            "dna": {"summary": f"Strategic {static_meta['doc_type']} identified in {static_meta['industry']} domain."},
-            "specialized_fields": {
-                "classification_mode": "taxonomy_direct",
-                "slug": clean_hint,
-                "extracted_at": "2026-03-24T07:18:00Z"
-            }
+    # 1. Direct Slug Lookup (Fastest/Deterministic via Central taxonomy)
+    static_meta = get_document_taxonomy(hint)
+    return {
+        "doc_type": static_meta["doc_type"],
+        "industry": static_meta["industry"],
+        "source_hint": hint or "none",
+        "dna": {"summary": f"Strategic {static_meta['doc_type']} identified in {static_meta['industry']} domain."},
+        "specialized_fields": {
+            "classification_mode": "taxonomy_direct",
+            "extracted_at": "2026-03-24T07:18:00Z"
         }
+    }
     
     # 2. Heritage Parsing Fallback
     try:
@@ -450,6 +387,31 @@ async def _run_indexing_core(
         # Memory Cleanup
         all_page_descriptions.append(page_description)
         gc.collect()
+
+    # ── Neo4j Knowledge Graph Sync (Universal Synthesis Layer) ──────
+    try:
+        from app.infrastructure.neo4j_adapter import Neo4jAdapter
+        neo4j = Neo4jAdapter()
+        
+        neo4j_chunks = []
+        for i, desc in enumerate(all_page_descriptions):
+            page_num = i + 1
+            neo4j_chunks.append({
+                "chunk_id": str(uuid.uuid5(uuid.NAMESPACE_DNS, f"{id_for_meta}_{page_num}")),
+                "text": desc,
+                "page": page_num,
+                "chunk_index": i
+            })
+        
+        await neo4j.batch_upsert_document_structure(
+            source_id=id_for_meta,
+            document_id=id_for_meta,
+            chunks=neo4j_chunks,
+            taxonomy=doc_dna # Pass taxonomy to Neo4j
+        )
+        logger.info("neo4j_vision_sync_done", source_id=id_for_meta, chunks=len(neo4j_chunks))
+    except Exception as neo_err:
+        logger.warning("neo4j_vision_sync_failed_secondary", error=str(neo_err))
 
     # Create Dynamic AI Metadata
     doc_dna = await _build_dynamic_metadata_with_ai(

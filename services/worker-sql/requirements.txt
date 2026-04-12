@@ -62,3 +62,6 @@ slowapi==0.1.9
 
 # Logging
 structlog==24.4.0
+
+# Neo4j Graph DB
+neo4j==5.21.0

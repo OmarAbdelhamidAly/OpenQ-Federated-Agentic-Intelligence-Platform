@@ -1,3 +1,4 @@
+from app.infrastructure.config import settings
 import structlog
 from typing import Dict, Any
 from app.infrastructure.llm import get_llm
@@ -19,7 +20,7 @@ async def verifier_agent(state: AnalysisState) -> Dict[str, Any]:
     logger.info("visual_verification_started", question=question)
     
     # We use Groq's fast Llama 3.1 8B for verification
-    llm = get_llm(temperature=0, model="llama-3.1-8b-instant")
+    llm = get_llm(temperature=0, model=settings.LLM_MODEL_FAST)
     
     # Combine real texts or descriptions from all retrieved pages
     context = ""

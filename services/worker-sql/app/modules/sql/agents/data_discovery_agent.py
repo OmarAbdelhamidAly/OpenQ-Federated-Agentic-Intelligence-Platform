@@ -93,6 +93,20 @@ async def data_discovery_agent(state: AnalysisState) -> Dict[str, Any]:
             **raw,
         }
 
+        # ── Neo4j Knowledge Graph Sync (Universal Synthesis Layer) ──────
+        try:
+            from app.infrastructure.neo4j_adapter import Neo4jAdapter
+            neo4j = Neo4jAdapter()
+            source_id = state.get("source_id")
+            if source_id:
+                neo4j.batch_upsert_data_schema(
+                    source_id=source_id,
+                    tables=schema_summary.get("tables", [])
+                )
+                _log.info("neo4j_sql_schema_sync_done", source_id=source_id, tables=len(schema_summary.get("tables", [])))
+        except Exception as neo_err:
+            _log.warning("neo4j_sql_sync_failed_secondary", error=str(neo_err))
+
         return {
             "schema_summary": schema_summary,
             "data_quality_score": 1.0,

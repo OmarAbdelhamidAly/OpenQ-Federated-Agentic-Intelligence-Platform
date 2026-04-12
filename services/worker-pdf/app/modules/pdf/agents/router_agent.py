@@ -1,3 +1,4 @@
+from app.infrastructure.config import settings
 import structlog
 from typing import Dict, Any, Literal
 from app.infrastructure.llm import get_llm
@@ -12,7 +13,7 @@ async def router_agent(state: AnalysisState) -> Dict[str, Any]:
     source_type = state.get("source_type", "pdf")
     
     # We use a very fast model for routing
-    llm = get_llm(temperature=0, model="llama-3.1-8b-instant")
+    llm = get_llm(temperature=0, model=settings.LLM_MODEL_FAST)
     
     prompt = f"""You are a Smart Orchestrator for a PDF AI system. Analyze the user's message and categorize it.
     

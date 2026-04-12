@@ -46,6 +46,12 @@ class Settings(BaseSettings):
     GEMINI_API_KEY: str = ""
     OLLAMA_BASE_URL: str = "http://localhost:11434"
     LLM_MODEL: str = "gemini-flash-latest"  # Use Gemini Flash as primary for reliability
+    LLM_MODEL_CODE: str = "deepseek/deepseek-chat-v3-0324"
+    LLM_MODEL_SQL: str = "google/gemini-2.0-flash-001"
+    LLM_MODEL_PDF: str = "google/gemini-2.0-flash-lite-001"
+    LLM_MODEL_NEXUS: str = "google/gemini-2.0-flash-001"
+    LLM_MODEL_FAST: str = "meta-llama/llama-3.2-3b-instruct"
+    LLM_MODEL_VISION: str = "meta-llama/llama-3.2-11b-vision-instruct"
 
 
 

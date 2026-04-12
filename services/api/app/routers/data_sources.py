@@ -23,6 +23,7 @@ from app.schemas.data_source import (
     DataSourceListResponse,
     DataSourceResponse,
     SQLConnectionRequest,
+    GithubConnectionRequest,
 )
 from app.infrastructure.adapters.encryption import encrypt_json, decrypt_json
 from app.infrastructure.adapters.storage import save_upload_file, get_tenant_dir
@@ -233,7 +234,13 @@ async def upload_file(
         )
 
     ext = os.path.splitext(safe_name)[1].lower()
-    ALLOWED = (".csv", ".xlsx", ".sqlite", ".db", ".sql", ".pdf", ".json")
+    ALLOWED = (
+        ".csv", ".xlsx", ".sqlite", ".db", ".sql", ".pdf", ".json", ".zip",
+        ".jpg", ".jpeg", ".png", ".webp",
+        ".mp3", ".wav", ".m4a", ".ogg",
+        ".mp4", ".mov", ".avi", ".mkv", ".txt",
+        ".py", ".js", ".ts", ".env", ".java", ".cpp", ".h", ".go", ".sh", ".yaml", ".yml", ".md"
+    )
     if ext not in ALLOWED:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -257,8 +264,8 @@ async def upload_file(
     tenant_id_str = str(admin.tenant_id)
     file_path = await save_upload_file(file, tenant_id_str)
 
-    # ── PDF Document ────────────────────────────────────────────────────
-    if ext == ".pdf":
+    # ── PDF/Text Document ────────────────────────────────────────────────────
+    if ext in (".pdf", ".txt", ".md"):
         # Base schema for PDF
         schema_json = {
             "page_count": 0,
@@ -290,6 +297,34 @@ async def upload_file(
         )
         from app.worker import celery_app
         celery_app.send_task("process_source_indexing", args=[str(source.id)], queue="knowledge")
+        return DataSourceResponse.model_validate(source)
+
+    # ── Codebase (Individual Files) ──────────────────────────────────────────
+    if ext in (".py", ".js", ".ts", ".env", ".java", ".cpp", ".h", ".go", ".sh", ".yaml", ".yml"):
+        schema_json = {"source_type": "codebase", "format": "single_file"}
+        source = DataSource(
+            id=uuid.uuid4(),
+            tenant_id=admin.tenant_id,
+            type="codebase",
+            name=file.filename,
+            file_path=file_path,
+            context_hint=context_hint,
+            schema_json=schema_json,
+            indexing_status="running",
+        )
+        db.add(source)
+        await db.commit()
+        await db.refresh(source)
+
+        logger.info(
+            "codebase_file_uploaded",
+            tenant_id=tenant_id_str,
+            user_id=str(admin.id),
+            source_id=str(source.id),
+            filename=file.filename,
+        )
+        from app.worker import celery_app
+        celery_app.send_task("process_codebase_indexing", args=[str(source.id)], queue="pillar.code")
         return DataSourceResponse.model_validate(source)
 
     # ── JSON Document ───────────────────────────────────────────────────
@@ -331,6 +366,34 @@ async def upload_file(
         celery_app.send_task("process_source_discovery", args=[str(source.id), str(admin.id)], queue="pillar.json")
         return DataSourceResponse.model_validate(source)
 
+    # ── Codebase ZIP ──────────────────────────────────────────────────────
+    if ext == ".zip":
+        schema_json: dict[str, Any] = {"source_type": "codebase", "format": "zip"}
+        source = DataSource(
+            id=uuid.uuid4(),
+            tenant_id=admin.tenant_id,
+            type="codebase",
+            name=file.filename,
+            file_path=file_path,
+            context_hint=context_hint,
+            schema_json=schema_json,
+            indexing_status="running",
+        )
+        db.add(source)
+        await db.commit()
+        await db.refresh(source)
+
+        logger.info(
+            "codebase_zip_uploaded",
+            tenant_id=tenant_id_str,
+            user_id=str(admin.id),
+            source_id=str(source.id),
+            filename=file.filename,
+        )
+        from app.worker import celery_app
+        celery_app.send_task("process_codebase_indexing", args=[str(source.id)], queue="pillar.code")
+        return DataSourceResponse.model_validate(source)
+
     # ── CSV / XLSX ──────────────────────────────────────────────────────
     if ext in (".csv", ".xlsx"):
         try:
@@ -368,6 +431,72 @@ async def upload_file(
         )
         from app.worker import celery_app
         celery_app.send_task("process_source_discovery", args=[str(source.id), str(admin.id)], queue="pillar.csv")
+        return DataSourceResponse.model_validate(source)
+
+    # ── Image Document ──────────────────────────────────────────────────
+    if ext in (".jpg", ".jpeg", ".png", ".webp"):
+        schema_json: dict[str, Any] = {"source_type": "image"}
+        source = DataSource(
+            id=uuid.uuid4(),
+            tenant_id=admin.tenant_id,
+            type="image",
+            name=file.filename,
+            file_path=file_path,
+            context_hint=context_hint,
+            schema_json=schema_json,
+            indexing_status="running",
+        )
+        db.add(source)
+        await db.commit()
+        await db.refresh(source)
+
+        logger.info("image_source_uploaded", tenant_id=tenant_id_str, source_id=str(source.id), filename=file.filename)
+        from app.worker import celery_app
+        celery_app.send_task("process_source_discovery", args=[str(source.id), str(admin.id)], queue="pillar.image")
+        return DataSourceResponse.model_validate(source)
+
+    # ── Audio Document ──────────────────────────────────────────────────
+    if ext in (".mp3", ".wav", ".m4a", ".ogg"):
+        schema_json: dict[str, Any] = {"source_type": "audio"}
+        source = DataSource(
+            id=uuid.uuid4(),
+            tenant_id=admin.tenant_id,
+            type="audio",
+            name=file.filename,
+            file_path=file_path,
+            context_hint=context_hint,
+            schema_json=schema_json,
+            indexing_status="running",
+        )
+        db.add(source)
+        await db.commit()
+        await db.refresh(source)
+
+        logger.info("audio_source_uploaded", tenant_id=tenant_id_str, source_id=str(source.id), filename=file.filename)
+        from app.worker import celery_app
+        celery_app.send_task("process_source_discovery", args=[str(source.id), str(admin.id)], queue="pillar.audio")
+        return DataSourceResponse.model_validate(source)
+
+    # ── Video Document ──────────────────────────────────────────────────
+    if ext in (".mp4", ".mov", ".avi", ".mkv"):
+        schema_json: dict[str, Any] = {"source_type": "video"}
+        source = DataSource(
+            id=uuid.uuid4(),
+            tenant_id=admin.tenant_id,
+            type="video",
+            name=file.filename,
+            file_path=file_path,
+            context_hint=context_hint,
+            schema_json=schema_json,
+            indexing_status="running",
+        )
+        db.add(source)
+        await db.commit()
+        await db.refresh(source)
+
+        logger.info("video_source_uploaded", tenant_id=tenant_id_str, source_id=str(source.id), filename=file.filename)
+        from app.worker import celery_app
+        celery_app.send_task("process_source_discovery", args=[str(source.id), str(admin.id)], queue="pillar.video")
         return DataSourceResponse.model_validate(source)
 
     # ── SQLite file (.sqlite / .db) ─────────────────────────────────────
@@ -509,6 +638,56 @@ async def connect_sql(
     )
     from app.worker import celery_app
     celery_app.send_task("auto_analysis_task", args=[str(source.id), str(admin.id)], queue='celery')
+    return DataSourceResponse.model_validate(source)
+
+
+@router.post(
+    "/connect-github",
+    response_model=DataSourceResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def connect_github(
+    body: Annotated[GithubConnectionRequest, Body()],
+    admin: Annotated[User, Depends(require_admin)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+    background_tasks: BackgroundTasks,
+) -> DataSourceResponse:
+    """Connect a GitHub repository as a codebase data source."""
+    
+    schema_json: dict[str, Any] = {
+        "source_type": "codebase", 
+        "format": "github",
+        "github_url": body.github_url,
+        "branch": body.branch
+    }
+    
+    # Store access token encrypted if provided
+    config_encrypted = None
+    if body.access_token:
+        config_encrypted = encrypt_json({"access_token": body.access_token})
+
+    source = DataSource(
+        id=uuid.uuid4(),
+        tenant_id=admin.tenant_id,
+        type="codebase",
+        name=body.name,
+        schema_json=schema_json,
+        config_encrypted=config_encrypted,
+        indexing_status="running",
+    )
+    db.add(source)
+    await db.commit()
+    await db.refresh(source)
+
+    logger.info(
+        "github_repo_connected",
+        tenant_id=str(admin.tenant_id),
+        user_id=str(admin.id),
+        source_id=str(source.id),
+        github_url=body.github_url,
+    )
+    from app.worker import celery_app
+    celery_app.send_task("process_codebase_indexing", args=[str(source.id)], queue='pillar.code')
     return DataSourceResponse.model_validate(source)
 
 

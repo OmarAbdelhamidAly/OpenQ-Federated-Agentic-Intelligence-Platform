@@ -1,9 +1,12 @@
+from app.infrastructure.config import settings
 import structlog
 from typing import Dict, Any, List
 from pydantic import BaseModel, Field
 from app.infrastructure.llm import get_llm
 from langchain_core.messages import HumanMessage
 from app.domain.analysis.entities import AnalysisState
+from app.modules.pdf.utils.procedural_memory import procedural_memory
+from app.modules.pdf.utils.episodic_memory import episodic_memory
 
 logger = structlog.get_logger(__name__)
 
@@ -26,23 +29,36 @@ async def analyst_agent(state: AnalysisState) -> Dict[str, Any]:
     logger.info("analyst_insights_started")
     
     # We use Groq's fast Llama 3.1 8B for analysis
-    llm = get_llm(temperature=0, model="llama-3.1-8b-instant")
+    llm = get_llm(temperature=0, model=settings.LLM_MODEL_PDF)
     structured_llm = llm.with_structured_output(AnalystOutput)
     
-    prompt = f"""You are a Strategic Analyst with expertise in document intelligence.
-    Review the following AI ANSWER and provide a structured Executive Summary and 3 actionable recommendations. 
-    
-    RULES:
-    1. Respond in the EXACT SAME LANGUAGE as the AI ANSWER (Arabic or English).
-    2. Focus on "What should the user do next?".
-    3. Keep it professional and concise.
-    
+    Previous Context:
+    {running_summary}
+
+    Past Experience (Similar Documents/Queries):
+    {episodic_context}
+
+    Procedural Guidelines:
+    {procedural_skill}
+
     AI ANSWER:
     {report}
     """
     
+    # Retrieve Episodic Experience
+    past_exp = await episodic_memory.get_related_insights(state.get("tenant_id", "default"), state.get("question", ""))
+    episodic_context = "No direct past experiences for this specific query."
+    if past_exp:
+        e = past_exp[0]
+        episodic_context = f"In a previous analysis of {e['source_id']}, we found: {e['summary']}. Use this to ensure consistency."
+
     try:
-        res = await structured_llm.ainvoke([HumanMessage(content=prompt)])
+        res = await structured_llm.ainvoke([HumanMessage(content=prompt.format(
+            report=report,
+            running_summary=state.get("running_summary", "No previous context."),
+            episodic_context=episodic_context,
+            procedural_skill=procedural_memory.get_procedural_knowledge(state.get("analysis_mode", "deep_vision"))
+        ))])
         logger.info("analyst_insights_completed")
         
         # Convert Pydantic objects to generic dicts for state merging

@@ -38,6 +38,9 @@ Your goal is to transform raw data into a premium, executive-grade analytical na
 - The `insight_report` and `executive_summary` fields MUST contain RAW text with Markdown formatting.
 - DO NOT use JSON-escaped quotes like \" inside the text; use single quotes ' or avoid them.
 
+### CONTEXTUAL MEMORY
+{running_summary}
+
 ### INPUT DATA
 - **User Question**: {question}
 - **Analytical Intent**: {intent}
@@ -89,7 +92,8 @@ async def insight_agent(state: AnalysisState) -> Dict[str, Any]:
         viz_rationale=state.get("viz_rationale") or "Standard automated selection.",
         kb_context=analysis.get("kb_context") or "None provided.",
         data=json.dumps(analysis.get("data", [])[:20], indent=2, default=str),
-        complexity_instruction=complexity_instruction
+        complexity_instruction=complexity_instruction,
+        running_summary=state.get("running_summary", "No previous context.")
     )
 
     try:

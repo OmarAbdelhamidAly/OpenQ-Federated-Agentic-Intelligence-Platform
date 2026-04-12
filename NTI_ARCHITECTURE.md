@@ -1,6 +1,6 @@
 # 🏛️ Architecture Documentation
 
-**Insightify — Autonomous Enterprise Data Intelligence Platform**
+**OpenQ — Autonomous Enterprise Data Intelligence Platform**
 
 > An open, composable alternative to Amazon Q Business, built for organizations sitting on fragmented multi-modal data.
 
@@ -217,6 +217,9 @@ worker-sql   → queues: pillar.sql, pillar.sqlite, pillar.postgresql
 worker-csv   → queue:  pillar.csv
 worker-json  → queue:  pillar.json
 worker-pdf   → queue:  pillar.pdf
+worker-code  → queue:  pillar.code
+worker-nexus → queue:  pillar.nexus
+worker-audio/image/video → queue: pillar.audio / pillar.image / pillar.video
 ```
 
 Each worker is a separate Docker container with its own `requirements.txt`. The SQL worker can scale to 10 replicas without affecting CSV or PDF processing.
@@ -436,6 +439,68 @@ route_after_router
 | `vision_synthesis` (Gemini 2.0 Flash Vision) | `deep_vision` | PDFs with charts, tables, diagrams — preserves visual layout |
 | `text_synthesis` | `fast_text` | Clean text-based PDFs — fast extraction, sub-second latency |
 | `ocr_synthesis` | `hybrid` | Scanned documents, low-quality images — OCR pre-processing |
+
+### OCR Synthesis (Part of PDF Pipeline)
+This node does specialized PaddleOCR extraction.
+
+---
+
+### Codebase Pipeline — 8 Nodes (Cyclic StateGraph)
+
+A specialized pipeline analyzing full source code repositories mapped into an Abstract Syntax Tree (AST) in Neo4j.
+
+```
+START
+  │
+  ▼
+[data_discovery]     ← Neo4j APOC connection. Discovers graph schema,
+  │                     labels (Class, Function, File), and relationships
+  ▼
+[guardrail]          ← Policy enforcement for source code queries
+  ▼
+[cypher_generator]   ← ReAct agent natively writing Cypher queries
+  │                     against the Neo4j schema
+  │
+check_cypher_result
+  ├── error + retry < 3 → [reflection]  ← Repairs invalid Cypher syntax
+  │                            └──► [cypher_generator]
+  └── success → [insight]
+                    ▼
+               [verifier]
+                    ▼
+           [memory_manager]    ← Episodic memory: updates conversational running summary
+                    ▼
+          [output_assembler]
+                    ▼
+             [save_cache] → END
+```
+
+---
+
+### Nexus Strategic Pipeline — 6 Nodes (Federated Orchestrator)
+
+The ultimate federator. Triggers and consolidates queries across SQL, CSV, JSON, PDF, and Code pillars.
+
+```
+START
+  │
+  ▼
+[nexus_router]       ← Determines which underlying pillars (workers) can
+  │                     answer fractions of the strategic query
+  ▼
+[graph_explorer]     ← Spawns async Celery tasks to `pillar.sql`, `pillar.code`, etc.
+  │                     Waits for distributed results (Scatter-Gather pattern)
+  ▼
+[synthesis_engine]   ← Ultimate synthesis of cross-domain structured and unstructured data
+  ▼
+[memory_manager]     ← Global organizational memory
+  ▼
+[verifier]           ← Strategic hallucination check
+  ▼
+[output_assembler]
+  ▼
+[save_cache] → END
+```
 
 ---
 
@@ -675,11 +740,11 @@ Adding a new column requires only deploying new code — no migration script, no
 Scrapes metrics from API Gateway at `/metrics`:
 
 ```
-insightify_api_requests_total{method, endpoint, status_code}
-insightify_api_request_duration_seconds{method, endpoint}
-insightify_jobs_total{status, intent, source_type}
-insightify_jobs_duration_seconds{pipeline, node}
-insightify_queue_depth{queue_name}
+OpenQ_api_requests_total{method, endpoint, status_code}
+OpenQ_api_request_duration_seconds{method, endpoint}
+OpenQ_jobs_total{status, intent, source_type}
+OpenQ_jobs_duration_seconds{pipeline, node}
+OpenQ_queue_depth{queue_name}
 ```
 
 ### Grafana

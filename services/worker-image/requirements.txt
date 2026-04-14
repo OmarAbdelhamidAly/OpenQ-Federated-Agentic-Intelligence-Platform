@@ -1,0 +1,11 @@
+openai
+structlog
+neo4j
+pillow
+pydantic
+pydantic-settings
+celery[redis]
+redis
+sqlalchemy[asyncio]
+asyncpg
+python-dotenv

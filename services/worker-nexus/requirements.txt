@@ -1,0 +1,33 @@
+# Celery + Redis
+celery[redis]==5.4.0
+redis==5.2.1
+
+# Logging
+structlog==24.4.0
+
+# Database
+sqlalchemy[asyncio]>=2.0.34
+asyncpg==0.30.0
+psycopg2-binary==2.9.10
+
+# Pydantic
+pydantic==2.10.4
+pydantic-settings==2.7.1
+
+# AI / LLM
+langchain==0.3.14
+langchain-community==0.3.14
+langchain-ollama==0.2.0
+langchain-google-genai>=2.0.0
+langchain-openai==0.3.1
+
+# LangGraph
+langgraph==0.2.60
+langgraph-checkpoint-redis>=0.1.0
+
+# Neo4j Graph DB
+neo4j==5.21.0
+
+# Vector DB (Semantic Cache)
+qdrant-client==1.13.1
+fastembed==0.5.1

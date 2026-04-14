@@ -1,0 +1,46 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: worker-nexus
+  namespace: openq-workers
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: worker-nexus
+  template:
+    metadata:
+      labels:
+        app: worker-nexus
+    spec:
+      containers:
+      - name: worker-nexus
+        image: omarabdelhamidaly/openq-worker-nexus:latest
+        command: ["celery", "-A", "app.worker", "worker", "-Q", "pillar.nexus", "--loglevel=info", "--concurrency=2"]
+        envFrom:
+        - configMapRef:
+            name: openq-config
+        - secretRef:
+            name: openq-secrets
+        env:
+        - name: NEO4J_URI
+          value: "bolt://neo4j-service:7687"
+        - name: NEO4J_USERNAME
+          value: "neo4j"
+        - name: NEO4J_PASSWORD
+          value: "analyst_neo4j_password"
+        - name: QDRANT_URL
+          value: "http://qdrant-service:6333"
+        resources:
+          limits:
+            cpu: "1000m"
+            memory: "2Gi"
+          requests:
+            cpu: "500m"
+            memory: "1Gi"
+        volumeMounts:
+        - name: tenant-data
+          mountPath: /tmp/tenants
+      volumes:
+      - name: tenant-data
+        emptyDir: {}

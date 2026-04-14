@@ -1,0 +1,70 @@
+"""Semantic Caching Utility for PDF Worker."""
+import structlog
+import uuid
+import json
+from typing import Any, Dict
+from qdrant_client import AsyncQdrantClient
+from qdrant_client.models import Distance, VectorParams, PointStruct
+from fastembed import TextEmbedding
+from app.infrastructure.config import settings
+from app.domain.analysis.entities import AnalysisState
+
+logger = structlog.get_logger(__name__)
+
+_embed_model = None
+def get_embedding_model():
+    global _embed_model
+    if _embed_model is None:
+        _embed_model = TextEmbedding(model_name="BAAI/bge-small-en-v1.5")
+    return _embed_model
+
+def embed_text(text: str) -> list[float]:
+    model = get_embedding_model()
+    embeddings = list(model.embed([text]))
+    return [float(x) for x in embeddings[0]]
+
+async def get_qdrant() -> AsyncQdrantClient:
+    return AsyncQdrantClient(url=settings.QDRANT_URL, api_key=settings.QDRANT_API_KEY)
+
+async def save_semantic_cache(state: AnalysisState) -> Dict[str, Any]:
+    """Saves successful PDF analysis and executive summary to semantic cache."""
+    question = state.get("question")
+    report = state.get("insight_report")
+    summary = state.get("executive_summary")
+    tenant_id = state.get("tenant_id")
+    source_id = state.get("source_id", "default")
+    
+    # Check chat_history to ensure it's not mid-conversation
+    if not state.get("chat_history") and question and report and tenant_id:
+        try:
+            client = await get_qdrant()
+            col_name = f"cache_{tenant_id.replace('-', '_')}"
+            
+            if not await client.collection_exists(col_name):
+                await client.create_collection(
+                    collection_name=col_name,
+                    vectors_config=VectorParams(size=384, distance=Distance.COSINE)
+                )
+                
+            vector = embed_text(question)
+            await client.upsert(
+                collection_name=col_name,
+                points=[
+                    PointStruct(
+                        id=str(uuid.uuid4()),
+                        vector=vector,
+                        payload={
+                            "question": question, 
+                            "insight": report,
+                            "summary": summary,
+                            "source_id": source_id,
+                            "type": "pdf"
+                        }
+                    )
+                ]
+            )
+            logger.info("semantic_cache_saved_pdf", tenant_id=tenant_id, source_id=source_id)
+        except Exception as e:
+            logger.warning("semantic_cache_save_failed_pdf", error=str(e))
+            
+    return {}

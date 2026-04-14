@@ -1,0 +1,93 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: worker-pdf-indexing
+  namespace: openq-workers
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: worker-pdf-indexing
+  template:
+    metadata:
+      labels:
+        app: worker-pdf-indexing
+    spec:
+      containers:
+      - name: worker-pdf-indexing
+        image: omarabdelhamidaly/openq-worker-pdf:latest
+        command: ["celery", "-A", "app.worker", "worker", "-Q", "knowledge", "--loglevel=info", "--concurrency=3"]
+        envFrom:
+        - configMapRef:
+            name: openq-config
+        - secretRef:
+            name: openq-secrets
+        env:
+        - name: WORKER_TYPE
+          value: "indexing"
+        - name: HF_HOME
+          value: "/app/hf_cache"
+        resources:
+          limits:
+            cpu: "3000m"
+            memory: "14Gi"
+          requests:
+            cpu: "1000m"
+            memory: "4Gi"
+        volumeMounts:
+        - name: tenant-data
+          mountPath: /tmp/tenants
+        - name: hf-cache
+          mountPath: /app/hf_cache
+      volumes:
+      - name: tenant-data
+        emptyDir: {}
+      - name: hf-cache
+        emptyDir: {}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: worker-pdf-analysis
+  namespace: openq-workers
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: worker-pdf-analysis
+  template:
+    metadata:
+      labels:
+        app: worker-pdf-analysis
+    spec:
+      containers:
+      - name: worker-pdf-analysis
+        image: omarabdelhamidaly/openq-worker-pdf:latest
+        command: ["celery", "-A", "app.worker", "worker", "-Q", "pillar.pdf", "--loglevel=info", "--concurrency=3"]
+        envFrom:
+        - configMapRef:
+            name: openq-config
+        - secretRef:
+            name: openq-secrets
+        env:
+        - name: WORKER_TYPE
+          value: "analysis"
+        - name: HF_HOME
+          value: "/app/hf_cache"
+        resources:
+          limits:
+            cpu: "3000m"
+            memory: "14Gi"
+          requests:
+            cpu: "1000m"
+            memory: "4Gi"
+        volumeMounts:
+        - name: tenant-data
+          mountPath: /tmp/tenants
+        - name: hf-cache
+          mountPath: /app/hf_cache
+      volumes:
+      - name: tenant-data
+        emptyDir: {}
+      - name: hf-cache
+        emptyDir: {}

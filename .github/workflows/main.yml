@@ -1,0 +1,90 @@
+name: OpenQ CI/CD Pipeline
+
+on:
+  push:
+    branches: [ "main" ]
+
+jobs:
+  # 1. Detection Phase: See what changed
+  detect-changes:
+    runs-on: ubuntu-latest
+    outputs:
+      services: ${{ steps.filter.outputs.changes }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            api: 'services/api/**'
+            exporter: 'services/exporter/**'
+            governance: 'services/governance/**'
+            worker-audio: 'services/worker-audio/**'
+            worker-code: 'services/worker-code/**'
+            worker-csv: 'services/worker-csv/**'
+            worker-image: 'services/worker-image/**'
+            worker-json: 'services/worker-json/**'
+            worker-nexus: 'services/worker-nexus/**'
+            worker-pdf: 'services/worker-pdf/**'
+            worker-sql: 'services/worker-sql/**'
+            worker-video: 'services/worker-video/**'
+            frontend: 'frontend/**'
+
+  # 2. Build and Push Phase
+  build-and-deploy:
+    needs: detect-changes
+    if: ${{ needs.detect-changes.outputs.services != '[]' }}
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        service: ${{ fromJSON(needs.detect-changes.outputs.services) }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build, tag, and push image to Amazon ECR
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          ECR_REPOSITORY: openq-${{ matrix.service }}
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          # Determine Dockerfile path (Frontend used 'Dockerfile', workers use 'Dockerfile.worker')
+          DOCKERFILE="Dockerfile"
+          CONTEXT="."
+          
+          if [[ "${{ matrix.service }}" == "frontend" ]]; then
+            CONTEXT="frontend"
+          elif [[ "${{ matrix.service }}" == "api" ]]; then
+            CONTEXT="services/api"
+          else
+            DOCKERFILE="Dockerfile.worker"
+            CONTEXT="services/${{ matrix.service }}"
+          fi
+
+          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG -t $ECR_REGISTRY/$ECR_REPOSITORY:latest -f $CONTEXT/$DOCKERFILE $CONTEXT
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
+
+      - name: Update kubeconfig
+        run: aws eks update-kubeconfig --name openq-eks-cluster --region us-east-1
+
+      - name: Deploy to EKS (Rolling Restart)
+        run: |
+          # Detect namespace
+          NAMESPACE="openq-workers"
+          if [[ "${{ matrix.service }}" == "api" || "${{ matrix.service }}" == "frontend" || "${{ matrix.service }}" == "exporter" || "${{ matrix.service }}" == "governance" ]]; then
+            NAMESPACE="openq-core"
+          fi
+          
+          # Trigger rollout
+          kubectl rollout restart deployment/${{ matrix.service }} -n $NAMESPACE

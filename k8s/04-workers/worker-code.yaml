@@ -1,0 +1,44 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: worker-code
+  namespace: openq-workers
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: worker-code
+  template:
+    metadata:
+      labels:
+        app: worker-code
+    spec:
+      containers:
+      - name: worker-code
+        image: omarabdelhamidaly/openq-worker-code:latest
+        command: ["celery", "-A", "app.worker", "worker", "-Q", "pillar.code", "--loglevel=info", "--concurrency=2"]
+        envFrom:
+        - configMapRef:
+            name: openq-config
+        - secretRef:
+            name: openq-secrets
+        env:
+        - name: NEO4J_URI
+          value: "bolt://neo4j-service:7687"
+        - name: NEO4J_USERNAME
+          value: "neo4j"
+        - name: NEO4J_PASSWORD
+          value: "analyst_neo4j_password"
+        resources:
+          limits:
+            cpu: "1500m"
+            memory: "4Gi"
+          requests:
+            cpu: "500m"
+            memory: "2Gi"
+        volumeMounts:
+        - name: tenant-data
+          mountPath: /tmp/tenants
+      volumes:
+      - name: tenant-data
+        emptyDir: {}

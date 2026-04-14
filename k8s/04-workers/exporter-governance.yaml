@@ -1,0 +1,75 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: exporter
+  namespace: openq-core
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: exporter
+  template:
+    metadata:
+      labels:
+        app: exporter
+    spec:
+      containers:
+      - name: exporter
+        image: omarabdelhamidaly/openq-exporter:latest
+        command: ["celery", "-A", "app.worker", "worker", "-Q", "export", "--loglevel=info", "--concurrency=2"]
+        envFrom:
+        - configMapRef:
+            name: openq-config
+        - secretRef:
+            name: openq-secrets
+        resources:
+          limits:
+            cpu: "500m"
+            memory: "1Gi"
+          requests:
+            cpu: "200m"
+            memory: "512Mi"
+        volumeMounts:
+        - name: tenant-data
+          mountPath: /tmp/tenants
+      volumes:
+      - name: tenant-data
+        emptyDir: {}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: governance
+  namespace: openq-core
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: governance
+  template:
+    metadata:
+      labels:
+        app: governance
+    spec:
+      containers:
+      - name: governance
+        image: omarabdelhamidaly/openq-governance:latest
+        command: ["celery", "-A", "app.worker", "worker", "-Q", "governance,celery", "--loglevel=info", "--concurrency=2"]
+        envFrom:
+        - configMapRef:
+            name: openq-config
+        - secretRef:
+            name: openq-secrets
+        resources:
+          limits:
+            cpu: "500m"
+            memory: "1Gi"
+          requests:
+            cpu: "200m"
+            memory: "512Mi"
+        volumeMounts:
+        - name: tenant-data
+          mountPath: /tmp/tenants
+      volumes:
+      - name: tenant-data
+        emptyDir: {}

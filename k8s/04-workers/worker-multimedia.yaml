@@ -1,0 +1,65 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: worker-multimedia
+  namespace: openq-workers
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: worker-multimedia
+  template:
+    metadata:
+      labels:
+        app: worker-multimedia
+    spec:
+      containers:
+      - name: worker-audio
+        image: omarabdelhamidaly/openq-worker-audio:latest
+        command: ["celery", "-A", "app.worker", "worker", "-Q", "pillar.audio", "--loglevel=info"]
+        envFrom:
+        - configMapRef:
+            name: openq-config
+        - secretRef:
+            name: openq-secrets
+        env:
+        - name: NEO4J_URI
+          value: "bolt://neo4j-service:7687"
+        - name: NEO4J_USERNAME
+          value: "neo4j"
+        - name: NEO4J_PASSWORD
+          value: "analyst_neo4j_password"
+        volumeMounts:
+        - name: tenant-data
+          mountPath: /tmp/tenants
+      - name: worker-image
+        image: omarabdelhamidaly/openq-worker-image:latest
+        command: ["celery", "-A", "app.worker", "worker", "-Q", "pillar.image", "--loglevel=info"]
+        envFrom:
+        - configMapRef:
+            name: openq-config
+        - secretRef:
+            name: openq-secrets
+        env:
+        - name: NEO4J_URI
+          value: "bolt://neo4j-service:7687"
+        volumeMounts:
+        - name: tenant-data
+          mountPath: /tmp/tenants
+      - name: worker-video
+        image: omarabdelhamidaly/openq-worker-video:latest
+        command: ["celery", "-A", "app.worker", "worker", "-Q", "pillar.video", "--loglevel=info"]
+        envFrom:
+        - configMapRef:
+            name: openq-config
+        - secretRef:
+            name: openq-secrets
+        env:
+        - name: NEO4J_URI
+          value: "bolt://neo4j-service:7687"
+        volumeMounts:
+        - name: tenant-data
+          mountPath: /tmp/tenants
+      volumes:
+      - name: tenant-data
+        emptyDir: {}

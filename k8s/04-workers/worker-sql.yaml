@@ -1,0 +1,42 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: worker-sql
+  namespace: openq-workers
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: worker-sql
+  template:
+    metadata:
+      labels:
+        app: worker-sql
+    spec:
+      containers:
+      - name: worker-sql
+        image: omarabdelhamidaly/openq-worker-sql:latest
+        command: ["celery", "-A", "app.worker", "worker", "-Q", "pillar.sql,pillar.sqlite,pillar.postgresql", "--loglevel=info", "--concurrency=4"]
+        envFrom:
+        - configMapRef:
+            name: openq-config
+        - secretRef:
+            name: openq-secrets
+        env:
+        - name: SQLITE_BASE_DIR
+          value: "/tmp/tenants"
+        - name: SUPERSET_URL
+          value: "http://superset-service:8088"
+        resources:
+          limits:
+            cpu: "1500m"
+            memory: "2Gi"
+          requests:
+            cpu: "500m"
+            memory: "1Gi"
+        volumeMounts:
+        - name: tenant-data
+          mountPath: /tmp/tenants
+      volumes:
+      - name: tenant-data
+        emptyDir: {} # Placeholder, should be EBS/EFS in Production

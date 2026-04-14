@@ -1,0 +1,55 @@
+# ── Celery Worker Dockerfile for Codebase Analysis ──────────────
+FROM python:3.11-slim AS builder
+
+RUN echo 'Acquire::http::Pipeline-Depth "0";' > /etc/apt/apt.conf.d/99fixbadproxy && \
+    echo 'Acquire::Retries "5";' >> /etc/apt/apt.conf.d/99fixbadproxy && \
+    sed -i 's|http://deb.debian.org|https://deb.debian.org|g' /etc/apt/sources.list.d/*.sources 2>/dev/null || true && \
+    sed -i 's|http://deb.debian.org|https://deb.debian.org|g' /etc/apt/sources.list 2>/dev/null || true
+
+RUN apt-get update && apt-get install -y --no-install-recommends --fix-missing \
+    build-essential \
+    libffi-dev \
+    libpq-dev \
+    git \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /build
+COPY requirements.txt .
+RUN pip install --no-cache-dir --upgrade pip && \
+    pip install --no-cache-dir --default-timeout=100 --prefix=/install -r requirements.txt
+
+# ── Runtime ───────────────────────────────────────────────────
+FROM python:3.11-slim
+
+RUN echo 'Acquire::http::Pipeline-Depth "0";' > /etc/apt/apt.conf.d/99fixbadproxy && \
+    echo 'Acquire::Retries "5";' >> /etc/apt/apt.conf.d/99fixbadproxy && \
+    sed -i 's|http://deb.debian.org|https://deb.debian.org|g' /etc/apt/sources.list.d/*.sources 2>/dev/null || true && \
+    sed -i 's|http://deb.debian.org|https://deb.debian.org|g' /etc/apt/sources.list 2>/dev/null || true
+
+RUN apt-get update && apt-get install -y --no-install-recommends --fix-missing \
+    libpq5 \
+    git \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN groupadd -r appuser && useradd -r -g appuser -d /app -s /sbin/nologin appuser
+
+WORKDIR /app
+ENV PYTHONPATH=/app
+
+COPY --from=builder /install /usr/local
+COPY . .
+
+RUN mkdir -p /tmp/tenants && chown -R appuser:appuser /tmp/tenants
+# Persistent code-chunk store (code snippets separated from Neo4j properties).
+# Mount a Docker volume here in production: -v code_chunks:/data/code_chunks
+RUN mkdir -p /data/code_chunks && chown -R appuser:appuser /data/code_chunks
+RUN chown -R appuser:appuser /app
+
+USER appuser
+
+CMD ["celery", "-A", "app.worker:celery_app", "worker", \
+    "-Q", "pillar.code", \
+    "--loglevel=info", \
+    "--concurrency=4", \
+    "--prefetch-multiplier=1"]

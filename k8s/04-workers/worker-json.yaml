@@ -1,0 +1,42 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: worker-json
+  namespace: openq-workers
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: worker-json
+  template:
+    metadata:
+      labels:
+        app: worker-json
+    spec:
+      containers:
+      - name: worker-json
+        image: omarabdelhamidaly/openq-worker-json:latest
+        command: ["celery", "-A", "app.worker", "worker", "-Q", "pillar.json", "--loglevel=info", "--concurrency=4"]
+        envFrom:
+        - configMapRef:
+            name: openq-config
+        - secretRef:
+            name: openq-secrets
+        env:
+        - name: MONGO_URI
+          value: "mongodb://mongodb-service:27017"
+        - name: SUPERSET_URL
+          value: "http://superset-service:8088"
+        resources:
+          limits:
+            cpu: "1000m"
+            memory: "1536Mi"
+          requests:
+            cpu: "500m"
+            memory: "768Mi"
+        volumeMounts:
+        - name: tenant-data
+          mountPath: /tmp/tenants
+      volumes:
+      - name: tenant-data
+        emptyDir: {}

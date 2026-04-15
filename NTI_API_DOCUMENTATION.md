@@ -1,6 +1,7 @@
 # 📡 API Documentation
 
-**OpenQ — Autonomous Enterprise Data Intelligence Platform**
+**Insightify — Autonomous Multi-Pillar Enterprise Data Intelligence Platform**
+
 Base URL: `http://localhost:8002/api/v1`
 
 All endpoints accept and return `application/json` unless noted.
@@ -27,6 +28,7 @@ Protected endpoints require `Authorization: Bearer {access_token}`.
 13. [Error Responses](#13-error-responses)
 14. [Role-Based Access](#14-role-based-access)
 15. [Rate Limits Reference](#15-rate-limits-reference)
+16. [Pipeline Routing Reference](#16-pipeline-routing-reference)
 
 ---
 
@@ -34,7 +36,7 @@ Protected endpoints require `Authorization: Bearer {access_token}`.
 
 ### POST /auth/register
 
-Create a new tenant and its first admin user in a single step.
+Create a new tenant and its first admin user in a single step. The registration response includes a ready-to-use JWT token pair.
 
 **Rate limit:** 3 requests / minute per IP
 
@@ -58,7 +60,7 @@ Create a new tenant and its first admin user in a single step.
     "email": "admin@acme.com",
     "role": "admin",
     "tenant_id": "7c9e6679-7425-40de-944b-e07fc1f90ae7",
-    "created_at": "2026-03-16T10:00:00Z"
+    "created_at": "2026-04-15T10:00:00Z"
   }
 }
 ```
@@ -69,7 +71,7 @@ Create a new tenant and its first admin user in a single step.
 
 ### POST /auth/login
 
-Authenticate and receive JWT token pair.
+Authenticate and receive a JWT token pair.
 
 **Rate limit:** 5 requests / minute per IP
 
@@ -89,7 +91,7 @@ Authenticate and receive JWT token pair.
 
 ### POST /auth/refresh
 
-Exchange a refresh token for a new token pair. The old refresh token is immediately revoked (rotation prevents token reuse attacks).
+Exchange a refresh token for a new token pair. The old refresh token is immediately revoked (JTI added to Redis blacklist — rotation prevents token reuse attacks).
 
 **Request:**
 ```json
@@ -136,8 +138,8 @@ Exchange a refresh token for a new token pair. The old refresh token is immediat
   "role": "admin",
   "tenant_id": "7c9e6679-...",
   "group_id": "grp-uuid-or-null",
-  "created_at": "2026-03-16T10:00:00Z",
-  "last_login": "2026-03-20T08:30:00Z"
+  "created_at": "2026-04-15T10:00:00Z",
+  "last_login": "2026-04-15T08:30:00Z"
 }
 ```
 
@@ -145,7 +147,7 @@ Exchange a refresh token for a new token pair. The old refresh token is immediat
 
 ### POST /users/invite
 
-**Protected · Admin only.** Invite a viewer user to the tenant. Creates the user and returns profile.
+**Protected · Admin only.** Invite a viewer user to the tenant. Creates the user account and returns the profile.
 
 **Request:**
 ```json
@@ -179,12 +181,12 @@ Exchange a refresh token for a new token pair. The old refresh token is immediat
 
 ### POST /data-sources/upload
 
-**Protected.** Upload a CSV, XLSX, SQLite, JSON, or PDF file. Triggers automatic schema profiling and background auto-analysis (5 pre-generated insights).
+**Protected.** Upload a data file. Triggers automatic schema profiling and background auto-analysis (5 pre-generated insights). Supported types: CSV, XLSX, SQLite, JSON, PDF, Audio (WAV/MP3/M4A), Image (PNG/JPEG/WebP), Video (MP4/MOV/AVI).
 
 **Request:** `multipart/form-data`
 - `file` — The data file
 - `name` — Human-readable display name
-- `domain_type` (optional) — `"sales" | "hr" | "finance" | "inventory" | "customer"`
+- `domain_type` (optional) — `"sales" | "hr" | "finance" | "inventory" | "customer" | "codebase" | "audio" | "image" | "video"`
 - `context_hint` (optional) — Natural language hint about the data context
 
 **Response `201`:**
@@ -203,9 +205,12 @@ Exchange a refresh token for a new token pair. The old refresh token is immediat
     "low_cardinality_values": {"quarter": ["Q1", "Q2", "Q3", "Q4"]}
   },
   "auto_analysis_status": "pending",
-  "created_at": "2026-03-20T09:00:00Z"
+  "indexing_status": "pending",
+  "created_at": "2026-04-15T09:00:00Z"
 }
 ```
+
+> **Audio/Image/Video sources:** `schema_json` is populated after indexing completes with `{summary, topics, entities, transcript (audio), speakers (audio), language (audio)}`.
 
 ---
 
@@ -228,7 +233,7 @@ Exchange a refresh token for a new token pair. The old refresh token is immediat
 }
 ```
 
-**Response `201`:** Data source object (credentials not returned).
+**Response `201`:** Data source object (credentials not returned — AES-256-GCM encrypted in DB).
 
 ---
 
@@ -236,7 +241,7 @@ Exchange a refresh token for a new token pair. The old refresh token is immediat
 
 **Protected.** List all data sources for the authenticated tenant.
 
-**Response `200`:** Array of data source objects including `auto_analysis_status`.
+**Response `200`:** Array of data source objects including `auto_analysis_status` and `indexing_status`.
 
 ---
 
@@ -259,7 +264,7 @@ Exchange a refresh token for a new token pair. The old refresh token is immediat
       "question": "What is the revenue trend over the last 4 quarters?",
       "intent": "trend",
       "insight": "Revenue grew 23% from Q1 to Q4, with Q3 showing the strongest single-quarter jump at +11%.",
-      "chart": { "...": "Plotly/ECharts spec" },
+      "chart": { "...": "ECharts/Plotly option spec" },
       "recommendations": ["Investigate Q3 drivers...", "..."]
     }
   ]
@@ -270,7 +275,7 @@ Exchange a refresh token for a new token pair. The old refresh token is immediat
 
 ### DELETE /data-sources/{id}
 
-**Protected · Admin only.** Delete a data source and all associated jobs, results, and uploaded files.
+**Protected · Admin only.** Delete a data source and all associated jobs, results, uploaded files, and Neo4j / Qdrant indexed entities.
 
 ---
 
@@ -278,7 +283,7 @@ Exchange a refresh token for a new token pair. The old refresh token is immediat
 
 ### POST /analysis/query
 
-**Protected.** Submit a natural-language analysis question. Returns immediately with a `job_id` — use GET /analysis/{job_id} to track progress.
+**Protected.** Submit a natural-language analysis question. Returns immediately with a `job_id` — use `GET /analysis/{job_id}` to track progress.
 
 **Request:**
 ```json
@@ -289,7 +294,8 @@ Exchange a refresh token for a new token pair. The old refresh token is immediat
 }
 ```
 
-- `kb_id` (optional) — Link a knowledge base for Gemini multimodal PDF hybrid fusion with SQL results
+- `source_id` — Target data source (determines which pillar worker handles the job)
+- `kb_id` (optional) — Link a knowledge base for Gemini multimodal PDF hybrid fusion with SQL/CSV results
 
 **Response `202`:**
 ```json
@@ -297,6 +303,44 @@ Exchange a refresh token for a new token pair. The old refresh token is immediat
   "job_id": "job-uuid",
   "status": "pending",
   "message": "Analysis queued. Poll /analysis/{job_id} for updates."
+}
+```
+
+**Pipeline routing** (automatic, based on `data_source.type`):
+
+| Source Type | Pillar Worker | Queue |
+|---|---|---|
+| `csv` | worker-csv | `pillar.csv` |
+| `sql` / `sqlite` / `postgresql` | worker-sql | `pillar.sql` / `pillar.sqlite` / `pillar.postgresql` |
+| `json` | worker-json | `pillar.json` |
+| `pdf` | worker-pdf | `pillar.pdf` |
+| `codebase` | worker-code | `pillar.code` |
+| `audio` | worker-audio | `pillar.audio` |
+| `image` | worker-image | `pillar.image` |
+| `video` | worker-video | `pillar.video` |
+
+> For cross-pillar strategic analysis, use `POST /analysis/nexus` with multiple `source_ids`.
+
+---
+
+### POST /analysis/nexus
+
+**Protected.** Submit a multi-source strategic intelligence question. The Nexus worker federates across all provided sources, forges cross-pillar relationships in Neo4j, and produces a 5-section Executive Strategic Intelligence Report.
+
+**Request:**
+```json
+{
+  "source_ids": ["sql-ds-uuid", "code-ds-uuid", "pdf-ds-uuid"],
+  "question": "How does our codebase reflect the database schema described in the product docs?"
+}
+```
+
+**Response `202`:**
+```json
+{
+  "job_id": "job-uuid",
+  "status": "pending",
+  "message": "Nexus analysis queued. Poll /analysis/{job_id} for updates."
 }
 ```
 
@@ -314,8 +358,8 @@ Exchange a refresh token for a new token pair. The old refresh token is immediat
   "intent": "ranking",
   "complexity_index": 3,
   "thinking_steps": [
-    {"node": "data_discovery", "status": "completed", "timestamp": "2026-03-20T09:05:01Z"},
-    {"node": "analysis_generator", "status": "completed", "timestamp": "2026-03-20T09:05:04Z"}
+    {"node": "data_discovery", "status": "completed", "timestamp": "2026-04-15T09:05:01Z"},
+    {"node": "analysis_generator", "status": "completed", "timestamp": "2026-04-15T09:05:04Z"}
   ]
 }
 ```
@@ -335,7 +379,7 @@ Exchange a refresh token for a new token pair. The old refresh token is immediat
 {
   "id": "job-uuid",
   "status": "done",
-  "completed_at": "2026-03-20T09:05:22Z"
+  "completed_at": "2026-04-15T09:05:22Z"
 }
 ```
 
@@ -343,7 +387,7 @@ Exchange a refresh token for a new token pair. The old refresh token is immediat
 
 ### POST /analysis/{job_id}/approve
 
-**Protected · Admin only.** Approve a HITL-paused SQL job. Patches the LangGraph state in Redis (`approval_granted: True`) and re-queues the task for resumption from checkpoint.
+**Protected · Admin only.** Approve a HITL-paused SQL job. Patches the LangGraph state in Redis (`approval_granted: True`) and re-queues the task for resumption from the Redis checkpoint.
 
 **Response `200`:**
 ```json
@@ -404,6 +448,8 @@ Exchange a refresh token for a new token pair. The old refresh token is immediat
 }
 ```
 
+> **Nexus results** include an additional `synthesis` field containing the 5-section Markdown Executive Strategic Intelligence Report, and `cross_pillar_links` showing the forged Neo4j relationships discovered during analysis.
+
 ---
 
 ### GET /analysis
@@ -424,7 +470,7 @@ Knowledge bases link PDF documents to analysis jobs for Gemini 2.0 Flash multimo
 
 ### POST /knowledge
 
-**Protected · Admin only.** Create a knowledge base and upload a PDF document. The document is processed and indexed via Gemini 2.0 Flash Vision: pages rendered as images, embeddings stored in Qdrant for semantic retrieval.
+**Protected · Admin only.** Create a knowledge base and upload a PDF document. The document is processed and indexed via Gemini 2.0 Flash Vision: pages rendered as JPEG images, embeddings stored in Qdrant for semantic retrieval.
 
 **Request:** `multipart/form-data`
 - `file` — PDF document
@@ -458,12 +504,13 @@ Knowledge bases link PDF documents to analysis jobs for Gemini 2.0 Flash multimo
 
 ## 6. Policies
 
-Policies are natural-language guardrail rules enforced by the LLM Guardrail Agent before any analysis executes. They are tenant-scoped and loaded per-job.
+Policies are natural-language guardrail rules enforced by the LLM Guardrail Agent before any analysis executes. They are tenant-scoped and loaded per-job by the governance worker.
 
 **Example policies:**
 - `"Never expose columns containing 'salary', 'compensation', or 'pay' in query results"`
 - `"Reject any query that would return individual employee records"`
 - `"Do not allow analysis of the users or auth_tokens tables"`
+- `"Queries referencing more than 3 tables require senior analyst approval"`
 
 ### POST /policies
 
@@ -478,7 +525,7 @@ Policies are natural-language guardrail rules enforced by the LLM Guardrail Agen
 }
 ```
 
-**Response `201`:** Policy object with `id` and `created_at`.
+**Response `201`:** Policy object with `id`, `tenant_id`, and `created_at`.
 
 ---
 
@@ -486,11 +533,21 @@ Policies are natural-language guardrail rules enforced by the LLM Guardrail Agen
 
 **Protected.** List all policies for the tenant (active and inactive).
 
+**Response `200`:** Array of policy objects.
+
 ---
 
 ### PATCH /policies/{id}
 
 **Protected · Admin only.** Update a policy rule or toggle `is_active`.
+
+**Request:**
+```json
+{
+  "rule": "Updated rule text.",
+  "is_active": false
+}
+```
 
 ---
 
@@ -515,6 +572,14 @@ Policies are natural-language guardrail rules enforced by the LLM Guardrail Agen
 
 - `format` — `"pdf" | "xlsx" | "json"`
 
+**Export contents per format:**
+
+| Format | Sheet 1 / Content | Sheet 2 |
+|---|---|---|
+| **PDF** | Formatted report: insight + charts (static images) + recommendations | — |
+| **XLSX** | Data snapshot (first 100 rows) | Recommendations |
+| **JSON** | Raw result envelope (all fields) | — |
+
 **Response `202`:**
 ```json
 {
@@ -535,7 +600,7 @@ Policies are natural-language guardrail rules enforced by the LLM Guardrail Agen
   "report_id": "report-uuid",
   "status": "done",
   "download_url": "/reports/report-uuid/download",
-  "expires_at": "2026-03-20T10:00:00Z"
+  "expires_at": "2026-04-15T10:00:00Z"
 }
 ```
 
@@ -543,7 +608,10 @@ Policies are natural-language guardrail rules enforced by the LLM Guardrail Agen
 
 ### GET /reports/{report_id}/download
 
-**Protected.** Stream the generated report file. Returns `Content-Disposition: attachment` with appropriate MIME type (`application/pdf`, `application/vnd.openxmlformats-officedocument.spreadsheetml.sheet`, or `application/json`).
+**Protected.** Stream the generated report file. Returns `Content-Disposition: attachment` with appropriate MIME type:
+- PDF → `application/pdf`
+- XLSX → `application/vnd.openxmlformats-officedocument.spreadsheetml.sheet`
+- JSON → `application/json`
 
 ---
 
@@ -573,10 +641,12 @@ Policies are natural-language guardrail rules enforced by the LLM Guardrail Agen
     "anomaly": 55
   },
   "sources_by_type": {
-    "csv": 6,
+    "csv": 4,
     "sql": 3,
     "pdf": 2,
-    "json": 1
+    "json": 1,
+    "codebase": 1,
+    "audio": 1
   }
 }
 ```
@@ -586,6 +656,12 @@ Policies are natural-language guardrail rules enforced by the LLM Guardrail Agen
 ### GET /metrics/jobs
 
 **Protected · Admin only.** Paginated job analytics with per-node latency breakdown.
+
+**Query parameters:**
+- `limit` — Max results (default: 50)
+- `offset` — Pagination offset
+- `status` — Filter by job status
+- `source_type` — Filter by source type (`csv`, `sql`, `pdf`, `code`, `audio`, etc.)
 
 ---
 
@@ -662,24 +738,24 @@ Voice endpoints allow submitting analysis queries via audio input, transcribed s
 }
 ```
 
-The job proceeds identically to a `POST /analysis/query` after transcription. Use `GET /analysis/{job_id}` to poll status.
+The job proceeds identically to `POST /analysis/query` after transcription. Use `GET /analysis/{job_id}` to poll status.
 
 ---
 
 ## 11. Superset
 
-Embeds Apache Superset as an analytics companion for advanced dashboarding alongside OpenQ's agentic analysis.
+Embeds Apache Superset as an analytics companion for advanced dashboarding alongside Insightify's agentic analysis.
 
 ### GET /superset/embed
 
-**Protected.** Returns an embedded Superset dashboard URL with a pre-authenticated session token.
+**Protected.** Returns an embedded Superset dashboard URL with a pre-authenticated guest session token.
 
 **Response `200`:**
 ```json
 {
   "embed_url": "http://superset:8088/superset/dashboard/1/?standalone=3",
   "token": "superset-guest-token",
-  "expires_at": "2026-03-20T10:00:00Z"
+  "expires_at": "2026-04-15T10:00:00Z"
 }
 ```
 
@@ -691,7 +767,7 @@ Embeds Apache Superset as an analytics companion for advanced dashboarding along
 
 No authentication required. Returns deep health — verifies PostgreSQL, Redis, and Celery worker connectivity.
 
-**Response `200`:**
+**Response `200` — healthy:**
 ```json
 {
   "status": "ok",
@@ -703,7 +779,7 @@ No authentication required. Returns deep health — verifies PostgreSQL, Redis, 
 }
 ```
 
-**Response `200` (degraded):**
+**Response `200` — degraded (partial outage, non-critical workers down):**
 ```json
 {
   "status": "degraded",
@@ -725,7 +801,7 @@ All errors follow a consistent envelope:
 {
   "detail": "Human-readable error message",
   "error_code": "MACHINE_READABLE_CODE",
-  "timestamp": "2026-03-20T09:00:00Z"
+  "timestamp": "2026-04-15T09:00:00Z"
 }
 ```
 
@@ -733,13 +809,13 @@ All errors follow a consistent envelope:
 |---|---|
 | `400` | Bad request — validation or business logic error |
 | `401` | Unauthenticated — missing or invalid JWT |
-| `403` | Forbidden — authenticated but insufficient role |
+| `403` | Forbidden — authenticated but insufficient role (e.g. viewer trying to approve) |
 | `404` | Resource not found (always tenant-scoped — cannot detect other tenants' resources) |
 | `409` | Conflict — e.g. approving a job not in `awaiting_approval` state |
 | `413` | Payload too large — file exceeds `MAX_UPLOAD_SIZE_MB` |
 | `422` | Unprocessable entity — Pydantic validation failure |
 | `429` | Rate limit exceeded |
-| `503` | Service unavailable — upstream dependency down |
+| `503` | Service unavailable — upstream dependency (DB/Redis/worker) down |
 
 ---
 
@@ -756,6 +832,7 @@ All errors follow a consistent envelope:
 | DELETE /data-sources/{id} | ✅ | ❌ |
 | GET /data-sources/{id}/auto-analysis | ✅ | ✅ |
 | POST /analysis/query | ✅ | ✅ |
+| POST /analysis/nexus | ✅ | ✅ |
 | GET /analysis / GET /analysis/{id} | ✅ | ✅ |
 | GET /analysis/{id}/result | ✅ | ✅ |
 | POST /analysis/{id}/approve | ✅ | ❌ |
@@ -768,12 +845,16 @@ All errors follow a consistent envelope:
 | PATCH /policies/{id} | ✅ | ❌ |
 | DELETE /policies/{id} | ✅ | ❌ |
 | GET /metrics/summary | ✅ | ❌ |
+| GET /metrics/jobs | ✅ | ❌ |
 | POST /reports/{id}/export | ✅ | ✅ |
 | GET /reports/{id}/download | ✅ | ✅ |
 | POST /groups | ✅ | ❌ |
 | GET /groups | ✅ | ❌ |
+| POST /groups/{id}/assign | ✅ | ❌ |
+| DELETE /groups/{id} | ✅ | ❌ |
 | POST /voice/query | ✅ | ✅ |
 | GET /superset/embed | ✅ | ✅ |
+| GET /health | ✅ | ✅ |
 
 ---
 
@@ -795,3 +876,32 @@ X-RateLimit-Reset: 1711024860
 When exceeded, returns `429 Too Many Requests` with a `Retry-After` header.
 
 > **Production note:** Behind a load balancer, trust `X-Forwarded-For` to ensure rate limits are per end-user IP, not per load balancer IP. Configure via `slowapi` `key_func`.
+
+---
+
+## 16. Pipeline Routing Reference
+
+The governance worker automatically routes each job to the correct pillar worker based on `data_source.type`. This table summarizes the full routing logic:
+
+| `data_source.type` | Celery Queue | Worker | LangGraph Nodes | Key Features |
+|---|---|---|---|---|
+| `csv` / `xlsx` / `sqlite` (file) | `pillar.csv` | worker-csv | 11 (Cyclic) | Data cleaning, guardrail, statistical tools |
+| `sql` (file SQLite) | `pillar.sqlite` | worker-sql | 12 (Cyclic) | HITL, reflection, hybrid fusion |
+| `sql` (PostgreSQL) | `pillar.postgresql` | worker-sql | 12 (Cyclic) | HITL, reflection, hybrid fusion |
+| `sql` (MySQL) | `pillar.sql` | worker-sql | 12 (Cyclic) | HITL, reflection, hybrid fusion |
+| `json` | `pillar.json` | worker-json | 10 (Cyclic) | MongoDB aggregation, Qdrant RAG |
+| `pdf` / `document` | `pillar.pdf` | worker-pdf | 10 (Orchestrator) | Triple synthesis engines, anti-hallucination |
+| `codebase` | `pillar.code` | worker-code | 8 (Cyclic) | Neo4j AST, Cypher generation |
+| `audio` | `pillar.audio` | worker-audio | Direct task | Gemini 1.5 Flash, Neo4j entity sync |
+| `image` | `pillar.image` | worker-image | Direct task | Gemini Vision, Neo4j entity sync |
+| `video` | `pillar.video` | worker-video | Direct task | Gemini Vision, Neo4j entity sync |
+| Multi-source | `pillar.nexus` | worker-nexus | 6 (Federated) | Neo4j cross-pillar forge, 5-pillar synthesis |
+
+**Status lifecycle:**
+
+```
+pending → running → awaiting_approval (SQL HITL only) → running → done
+                                                                 → error
+```
+
+**Job status polling recommended interval:** 1–2 seconds. Typical completion: 8–18 seconds (excluding HITL pause).

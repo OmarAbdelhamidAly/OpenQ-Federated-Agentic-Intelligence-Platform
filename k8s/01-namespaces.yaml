@@ -4,6 +4,60 @@ metadata:
   name: openq-core
 ---
 apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: core-quota
+  namespace: openq-core
+spec:
+  hard:
+    requests.cpu: "10"
+    requests.memory: 20Gi
+    limits.cpu: "20"
+    limits.memory: 40Gi
+---
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: core-limits
+  namespace: openq-core
+spec:
+  limits:
+  - default:
+      cpu: "1"
+      memory: 1Gi
+    defaultRequest:
+      cpu: "250m"
+      memory: 512Mi
+    type: Container
+---
+apiVersion: v1
 kind: Namespace
 metadata:
   name: openq-workers
+---
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: workers-quota
+  namespace: openq-workers
+spec:
+  hard:
+    requests.cpu: "50"
+    requests.memory: 100Gi
+    limits.cpu: "100"
+    limits.memory: 200Gi
+---
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: worker-limits
+  namespace: openq-workers
+spec:
+  limits:
+  - default:
+      cpu: "2"
+      memory: 4Gi
+    defaultRequest:
+      cpu: "500m"
+      memory: 1Gi
+    type: Container

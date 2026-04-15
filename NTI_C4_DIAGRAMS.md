@@ -1,6 +1,6 @@
 # C4 Architecture Diagrams
 
-**OpenQ — Autonomous Enterprise Data Intelligence Platform**
+**Insightify — Autonomous Multi-Pillar Enterprise Data Intelligence Platform**
 
 > C4 Model: four levels of zoom — Context → Container → Component → Code.
 > Each diagram narrows scope. Start at Level 1 for the big picture.
@@ -21,18 +21,20 @@ graph TB
     Viewer["👤 Analyst / Viewer
     Asks natural-language questions,
     views charts & insights,
-    exports reports"]
+    exports reports via voice or text"]
 
     DevOps["👨‍💻 DevOps Engineer
     Deploys, monitors, and
     scales the platform via
     Docker Compose / Kubernetes"]
 
-    System["🤖 OpenQ
+    System["🤖 Insightify
     Autonomous multi-tenant SaaS platform.
-    Turns raw data into executive insights
-    via multi-agent LangGraph pipelines.
-    Supports CSV, SQL, JSON, and PDF."]
+    Turns raw multi-modal data into
+    executive insights via 9 specialized
+    LangGraph agent pipelines.
+    Supports CSV, SQL, JSON, PDF,
+    Code, Audio, Image, Video."]
 
     OpenRouter["☁️ OpenRouter API
     Primary LLM gateway
@@ -43,25 +45,30 @@ graph TB
     Llama-3.3-70B / 3.1-8B"]
 
     Gemini["☁️ Google Gemini API
-    Direct fallback + Vision
+    Direct fallback + PDF/Image/Video Vision
     gemini-2.0-flash-exp"]
 
     UserDB["🗄️ User's Database
     PostgreSQL / MySQL
     Enterprise data source"]
 
-    Qdrant["🔍 Qdrant
+    Qdrant["🔍 Qdrant Cloud
     Vector database
     JSON RAG & PDF embeddings"]
 
+    Neo4j["🕸️ Neo4j
+    Knowledge Graph
+    Code AST + cross-pillar entities"]
+
     Admin  -->|"HTTPS — manage, approve, configure"| System
-    Viewer -->|"HTTPS — query, view, export"| System
+    Viewer -->|"HTTPS — query, view, export, voice"| System
     DevOps -->|"Docker / K8s / Prometheus"| System
     System -->|"LLM completions — primary"| OpenRouter
     System -->|"LLM completions — fallback 1"| Groq
     System -->|"Vision + LLM — fallback 2"| Gemini
     System -->|"Read-only SELECT queries"| UserDB
     System -->|"Vector upsert + search"| Qdrant
+    System -->|"Graph write + Cypher query"| Neo4j
 
     style System fill:#1F3864,color:#fff,stroke:#2E5B8A
     style OpenRouter fill:#2E5B8A,color:#fff,stroke:#4472C4
@@ -69,6 +76,7 @@ graph TB
     style Gemini fill:#4285F4,color:#fff,stroke:#2E5B8A
     style UserDB fill:#2E5B8A,color:#fff,stroke:#4472C4
     style Qdrant fill:#4F46E5,color:#fff,stroke:#4472C4
+    style Neo4j fill:#018BFF,color:#fff,stroke:#0066CC
     style Admin  fill:#D5E8F0,color:#1F3864,stroke:#2E5B8A
     style Viewer fill:#D5E8F0,color:#1F3864,stroke:#2E5B8A
     style DevOps fill:#D5E8F0,color:#1F3864,stroke:#2E5B8A
@@ -97,7 +105,7 @@ graph TB
         FastAPI · asyncpg · :8002
         JWT auth · AES-256-GCM encryption
         Rate limiting · Security headers
-        Clean Architecture: domain/use_cases/infrastructure"]
+        11 router modules"]
 
         subgraph Workers ["⚙️ Celery Workers"]
             Gov["🛡️ Governance
@@ -107,7 +115,7 @@ graph TB
             SQL["🗃️ worker-sql
             queues: pillar.sql/.sqlite/.postgresql
             12-node Cyclic StateGraph
-            HITL · Reflection · Hybrid Fusion · Semantic Cache"]
+            HITL · Reflection · Hybrid Fusion"]
 
             CSV["📊 worker-csv
             queue: pillar.csv
@@ -123,6 +131,31 @@ graph TB
             queue: pillar.pdf
             10-node Orchestrator StateGraph
             Gemini 2.0 Flash Vision · Triple-Engine"]
+
+            Code["💻 worker-code
+            queue: pillar.code
+            8-node Cyclic StateGraph
+            Neo4j AST · Cypher generation"]
+
+            Audio["🎙️ worker-audio
+            queue: pillar.audio
+            Direct task — Gemini 1.5 Flash
+            Transcript · Speaker · Neo4j sync"]
+
+            Image["🖼️ worker-image
+            queue: pillar.image
+            Direct task — Gemini Vision
+            Object/Scene · Neo4j sync"]
+
+            Video["🎬 worker-video
+            queue: pillar.video
+            Direct task — Gemini Vision
+            Scene/Event · Neo4j sync"]
+
+            Nexus["🕸️ worker-nexus
+            queue: pillar.nexus
+            6-node Federated Orchestrator
+            Neo4j forge → 5-pillar synthesis"]
 
             Exp["📦 exporter
             queue: export
@@ -145,8 +178,17 @@ graph TB
             JSON RAG vectors
             PDF chunk embeddings"]
 
+            Neo4jDB["Neo4j :7687
+            Code AST graph
+            Audio/Image/Video entities
+            Cross-pillar relationships"]
+
+            MongoDB["MongoDB :27017
+            JSON document store
+            Aggregation pipeline target"]
+
             Vol["Shared Volume ./tenants/
-            Uploaded CSV/JSON/PDF files
+            Uploaded files (all types)
             Exported PDF/XLSX reports"]
         end
 
@@ -155,12 +197,14 @@ graph TB
             Metrics scraping"]
             Graf["Grafana :3000
             Pre-provisioned dashboards"]
+            Superset["Apache Superset :8088
+            Embedded analytics companion"]
         end
     end
 
     OpenRouter["☁️ OpenRouter API
     Gemini 2.0 Flash (primary)"]
-    Groq["☁️ Groq API (fallback)"]
+    Groq["☁️ Groq API (fallback 1)"]
     GeminiAPI["☁️ Gemini Direct (fallback 2)"]
 
     User    -->|"HTTPS"| UI
@@ -174,23 +218,43 @@ graph TB
     Redis   -->|"task pickup"| CSV
     Redis   -->|"task pickup"| JSON
     Redis   -->|"task pickup"| PDF
+    Redis   -->|"task pickup"| Code
+    Redis   -->|"task pickup"| Audio
+    Redis   -->|"task pickup"| Image
+    Redis   -->|"task pickup"| Video
+    Redis   -->|"task pickup"| Nexus
     Redis   -->|"task pickup"| Exp
     API     -->|"asyncpg SQL"| PG
     SQL     -->|"asyncpg SQL"| PG
     CSV     -->|"asyncpg SQL"| PG
     JSON    -->|"asyncpg SQL"| PG
     PDF     -->|"asyncpg SQL"| PG
+    Code    -->|"asyncpg SQL"| PG
     SQL     -->|"LangGraph HITL checkpoint"| Redis
     SQL     -->|"vector search (hybrid fusion)"| QdrantLocal
     JSON    -->|"vector search (RAG)"| QdrantLocal
     PDF     -->|"chunk indexing + search"| QdrantLocal
+    Code    -->|"Cypher query"| Neo4jDB
+    Audio   -->|"entity upsert"| Neo4jDB
+    Image   -->|"entity upsert"| Neo4jDB
+    Video   -->|"entity upsert"| Neo4jDB
+    Nexus   -->|"cross-link forge + read"| Neo4jDB
+    JSON    -->|"document query"| MongoDB
     API     -->|"file I/O"| Vol
     PDF     -->|"file I/O"| Vol
+    Audio   -->|"file read"| Vol
+    Image   -->|"file read"| Vol
+    Video   -->|"file read"| Vol
     Exp     -->|"report write"| Vol
     SQL     -->|"LLM calls"| OpenRouter
     CSV     -->|"LLM calls"| OpenRouter
     JSON    -->|"LLM calls"| OpenRouter
     PDF     -->|"Vision + LLM calls"| GeminiAPI
+    Code    -->|"LLM calls"| OpenRouter
+    Audio   -->|"Gemini multimodal"| OpenRouter
+    Image   -->|"Gemini multimodal"| GeminiAPI
+    Video   -->|"Gemini multimodal"| GeminiAPI
+    Nexus   -->|"LLM calls"| OpenRouter
     Gov     -->|"LLM calls"| OpenRouter
     OpenRouter -->|"fallback"| Groq
     OpenRouter -->|"fallback"| GeminiAPI
@@ -201,9 +265,13 @@ graph TB
     style Redis fill:#DC382D,color:#fff
     style PG fill:#336791,color:#fff
     style QdrantLocal fill:#4F46E5,color:#fff
+    style Neo4jDB fill:#018BFF,color:#fff
+    style MongoDB fill:#47A248,color:#fff
     style Gov fill:#E74C3C,color:#fff
     style SQL fill:#27AE60,color:#fff
     style PDF fill:#4285F4,color:#fff
+    style Nexus fill:#9B59B6,color:#fff
+    style Code fill:#FF6B35,color:#fff
 ```
 
 ---
@@ -253,7 +321,8 @@ graph LR
             voice-to-text query submission"]
 
             SupR["superset.py
-            embedded analytics proxy"]
+            embedded analytics proxy
+            + guest token issuance"]
         end
 
         subgraph Infra ["Infrastructure (Clean Arch: outermost ring)"]
@@ -319,7 +388,7 @@ graph LR
     AutoA --> Redis
     Export --> Redis
     Sec --> Redis
-    LLMFac --> Guard
+    VoiR --> Pipeline
 
     style MW fill:#FF6B35,color:#fff
     style Guard fill:#E74C3C,color:#fff
@@ -388,7 +457,7 @@ graph TD
 
             SC["save_cache
             Semantic cache save
-            Redis + Qdrant"]
+            Qdrant vector upsert"]
 
             OA["output_assembler
             Final JSON build
@@ -449,6 +518,7 @@ graph TD
     style RF fill:#E74C3C,color:#fff
     style VR fill:#27AE60,color:#fff
     style SC fill:#8E44AD,color:#fff
+    style HF fill:#4285F4,color:#fff
 ```
 
 ---
@@ -555,88 +625,6 @@ graph TD
 
 ---
 
-## Level 3 — Component Diagram: JSON Worker
-
-*What are the 10 nodes inside the JSON analysis worker?*
-
-```mermaid
-graph TD
-    Celery["Celery Task Entry
-    queue: pillar.json"]
-
-    subgraph JSONWorker ["services/worker-json — 10-node Directed Cyclic StateGraph"]
-        WF["workflow.py
-        LangGraph StateGraph
-        MongoDB + Qdrant backed"]
-
-        subgraph Agents ["Agents (10 nodes)"]
-            DD["data_discovery
-            MongoDB connection
-            Schema sampling · nested
-            key extraction"]
-
-            GR["guardrail
-            Policy enforcement
-            Schema conformity check"]
-
-            AN["analysis
-            Semantic decomposition
-            MongoDB aggregation pipeline
-            Qdrant 768d RAG retrieval"]
-
-            RF["reflection
-            MongoDB query error repair
-            retry_count tracking"]
-
-            VZ["visualization
-            ECharts / Plotly spec"]
-
-            IN["insight
-            Context-aware summary
-            grounded in document data"]
-
-            VR["verifier
-            Schema-compliant output
-            quality gate"]
-
-            RC["recommendation
-            3 next steps"]
-
-            OA["output_assembler
-            Final JSON · PostgreSQL write"]
-
-            SC["save_cache
-            Semantic cache save"]
-        end
-    end
-
-    MongoDB["MongoDB
-    Document Store"]
-    Qdrant["Qdrant :6333
-    768d vectors · semantic search"]
-    LLM["OpenRouter / Groq / Gemini"]
-    PG["PostgreSQL"]
-
-    Celery --> WF
-    WF --> DD --> GR --> AN
-    AN -->|"error + retry<3"| RF --> AN
-    AN -->|"success"| VZ --> IN --> VR --> RC --> OA --> SC
-    DD --> MongoDB
-    AN --> MongoDB
-    AN --> Qdrant
-    AN --> LLM
-    IN --> LLM
-    VR --> LLM
-    OA --> PG
-
-    style GR fill:#8E44AD,color:#fff
-    style RF fill:#E74C3C,color:#fff
-    style VR fill:#27AE60,color:#fff
-    style AN fill:#4F46E5,color:#fff
-```
-
----
-
 ## Level 3 — Component Diagram: PDF Worker (Orchestrator)
 
 *What are the 10 nodes inside the PDF Orchestrator worker?*
@@ -675,7 +663,7 @@ graph TD
 
             VS["vision_synthesis
             Gemini 2.0 Flash Vision
-            PDF pages as JPEG images
+            PDF pages as JPEG base64
             Multimodal LLM synthesis"]
 
             TS["text_synthesis
@@ -739,6 +727,164 @@ graph TD
 
 ---
 
+## Level 3 — Component Diagram: Code Worker
+
+*What are the 8 nodes inside the Codebase analysis worker?*
+
+```mermaid
+graph TD
+    Celery["Celery Task Entry
+    queue: pillar.code"]
+
+    subgraph CodeWorker ["services/worker-code — 8-node Cyclic StateGraph"]
+        WF["workflow.py
+        LangGraph StateGraph
+        Neo4j AST-mapped codebase
+        MAX_RETRIES = 3"]
+
+        subgraph Agents ["Agents (8 nodes)"]
+            DD["discovery
+            Neo4j schema description
+            node labels · rel types
+            live stats · sample summaries"]
+
+            GEN["generator
+            cypher_generator_agent
+            LLM: question → Cypher query
+            schema-grounded generation"]
+
+            RF["reflection
+            reflection_agent
+            Repair invalid Cypher
+            retry_count tracking"]
+
+            EX["execution
+            cypher_execution_node
+            Run Cypher on Neo4j
+            shared pool singleton"]
+
+            IN["insight
+            insight_agent
+            LLM: results + code snippets
+            → narrative explanation"]
+
+            MEM["memory
+            memory_manager_agent
+            Sliding window episodic summary"]
+
+            SC["save_cache
+            save_semantic_cache
+            Question + Cypher + result"]
+
+            OA["assembler
+            output_assembler
+            Final JSON · PostgreSQL write"]
+        end
+    end
+
+    Neo4j["Neo4j :7687
+    Code AST · Class/Function/File
+    Relationship graph"]
+    LLM["OpenRouter / Groq / Gemini"]
+    PG["PostgreSQL"]
+
+    Celery --> WF
+    WF --> DD --> GEN
+    GEN -->|"error + retry < MAX"| RF --> GEN
+    GEN -->|"error + retry >= MAX"| EX
+    GEN -->|"no error"| EX
+    EX -->|"error + retry < MAX"| RF
+    EX -->|"no error"| IN --> MEM --> SC --> OA
+    DD --> Neo4j
+    EX --> Neo4j
+    GEN --> LLM
+    IN --> LLM
+    OA --> PG
+
+    style RF fill:#E74C3C,color:#fff
+    style EX fill:#FF6B35,color:#fff
+    style MEM fill:#8E44AD,color:#fff
+    style IN fill:#27AE60,color:#fff
+```
+
+---
+
+## Level 3 — Component Diagram: Nexus Worker (Federated Orchestrator)
+
+*How does the Nexus strategic intelligence pipeline work?*
+
+```mermaid
+graph TD
+    Celery["Celery Task Entry
+    queue: pillar.nexus"]
+
+    subgraph NexusWorker ["services/worker-nexus — 6-node Federated Orchestrator"]
+        WF["workflow.py
+        LangGraph StateGraph
+        Reads shared Neo4j Knowledge Graph"]
+
+        subgraph Agents ["Agents (6 nodes)"]
+            RT["router
+            nexus_router
+            Routes: explore / direct_query / finalize"]
+
+            EX["explorer
+            graph_explorer
+            Discovers available pillars
+            and Neo4j context"]
+
+            OR["orchestrator
+            pillar_orchestrator (inner graph)
+            3 sub-nodes:
+            1. discovery_node: forge cross-source links
+            2. gather_context_node: collect entities + metadata
+            3. synthesis_node: 5-pillar report generation"]
+
+            SY["synthesizer
+            synthesis_engine
+            Final cross-pillar consolidation"]
+
+            MEM["memory
+            memory_manager_agent
+            Episodic memory via Qdrant
+            semantic similarity"]
+
+            SC["save_cache
+            save_semantic_cache
+            Question + synthesis saved"]
+        end
+    end
+
+    Neo4j["Neo4j :7687
+    Cross-pillar entity graph
+    REPRESENTS_DATA / ENTITY_TARGET
+    CHUNK_MENTION relationships"]
+    LLM["OpenRouter Gemini 2.0 Flash
+    5-pillar synthesis prompt"]
+    PG["PostgreSQL
+    Schema/metadata per source"]
+    QdrantMem["Qdrant
+    Episodic memory vectors"]
+
+    Celery --> WF
+    WF --> RT
+    RT -->|"explore"| EX --> OR
+    RT -->|"direct_query"| OR
+    RT -->|"finalize"| SY
+    OR --> SY --> MEM --> SC
+    OR <-->|"forge + read"| Neo4j
+    OR --> PG
+    SY --> LLM
+    MEM --> QdrantMem
+
+    style OR fill:#9B59B6,color:#fff
+    style RT fill:#FF6B35,color:#fff
+    style SY fill:#4285F4,color:#fff
+    style MEM fill:#8E44AD,color:#fff
+```
+
+---
+
 ## Level 3 — Component Diagram: Governance Worker
 
 *What are the components inside the Governance worker?*
@@ -776,6 +922,7 @@ graph LR
 
     PillarQ["Redis
     → pillar.sql / csv / json / pdf
+    / code / audio / image / video / nexus
     Celery task dispatch"]
 
     LLM["OpenRouter / Groq / Gemini"]
@@ -819,7 +966,7 @@ sequenceDiagram
 
     Redis->>SQLWorker: Pick up task
     SQLWorker->>SQLWorker: data_discovery → analysis_generator
-    Note over SQLWorker: Generates optimized SQL query
+    Note over SQLWorker: Generates optimized ANSI SELECT query
     SQLWorker->>Redis: Serialize full graph state (AsyncRedisSaver)
     Note over Redis: Key: checkpoint:{thread_id}
     SQLWorker->>SQLWorker: interrupt_after=["human_approval"] fires
@@ -841,7 +988,7 @@ sequenceDiagram
     SQLWorker-->>API: Insert AnalysisResult, status=done
 
     Client->>API: GET /analysis/{job_id}/result
-    API-->>Client: { charts, insight_report, recommendations, data_snapshot }
+    API-->>Client: { charts, insight_report, exec_summary, recommendations, follow_up_suggestions }
 ```
 
 ---
@@ -903,7 +1050,7 @@ sequenceDiagram
 
     VS->>VS: Render PDF pages 3,7,12 as JPEG base64
     VS->>VS: POST to Gemini 2.0 Flash Vision API
-    Note over VS: Multimodal: image + text prompt
+    Note over VS: Multimodal: image array + text prompt
     VS->>State: Write insight_report (draft answer)
 
     VS->>VR: Route → verifier
@@ -929,6 +1076,51 @@ sequenceDiagram
 
 ---
 
+## Level 4 — Code Diagram: Nexus Cross-Pillar Entity Forge
+
+*How does the Nexus worker create cross-domain relationships in Neo4j?*
+
+```mermaid
+sequenceDiagram
+    participant Client
+    participant API as API Gateway
+    participant Nexus as Nexus Worker
+    participant Neo4j
+    participant LLM as Gemini 2.0 Flash (OpenRouter)
+    participant PG as PostgreSQL
+
+    Client->>API: POST /analysis/query {source_ids=[sql_id, code_id, pdf_id], question}
+    API->>Nexus: Celery task → queue: pillar.nexus
+
+    Nexus->>Nexus: nexus_router → route="explore"
+    Nexus->>Nexus: graph_explorer → discover pillars
+
+    Note over Nexus: pillar_orchestrator enters inner graph
+
+    Nexus->>Neo4j: forge_cross_source_links(source_ids)
+    Note over Neo4j: Match(Class) ↔ Match(Table) by name → CREATE :REPRESENTS_DATA
+    Note over Neo4j: Match(Entity) ↔ Match(Column) → CREATE :ENTITY_TARGET
+    Note over Neo4j: Match(Chunk) ↔ Match(Function) → CREATE :CHUNK_MENTION
+    Neo4j-->>Nexus: forge_counts {class_table: 12, entity_target: 8, chunk_mention: 5}
+
+    Nexus->>Neo4j: fetch_multi_source_context(source_ids)
+    Neo4j-->>Nexus: {entities: [...], cross_pillar_links: [...]}
+
+    Nexus->>PG: SELECT type, file_path, schema_json FROM data_sources WHERE id IN (...)
+    PG-->>Nexus: metadata per source
+
+    Note over Nexus: Bucket entities by pillar: sql/csv/json/pdf/codebase
+    Note over Nexus: Build 5-section cross-pillar context block
+
+    Nexus->>LLM: 5-pillar synthesis prompt (entities + cross-links + episodic memory)
+    LLM-->>Nexus: Executive Strategic Intelligence Report (5 sections)
+
+    Nexus->>PG: INSERT AnalysisResult, UPDATE job status → done
+    Nexus-->>Client: { synthesis, thinking_steps, cross_pillar_links }
+```
+
+---
+
 ## Architecture Decision Records (ADR)
 
 | Decision | Choice | Rejected Alternatives | Rationale |
@@ -940,8 +1132,11 @@ sequenceDiagram
 | LLM fallback strategy | `with_fallbacks([Groq, Gemini Direct])` | Single provider, manual retry | Zero-downtime LLM provider outages; transparent to all agents |
 | PDF synthesis | Gemini 2.0 Flash Vision (multimodal) | ColPali multi-vector, text chunking | Native multimodal: no separate embedding model; preserves visual layout, tables, charts |
 | Vector search (JSON/PDF) | Qdrant (768d) | Pinecone, Weaviate, pgvector | Self-hosted; free; excellent async Python SDK; supports multi-vector |
+| Knowledge graph | Neo4j | pgvector, plain Postgres | Native graph traversal for cross-pillar relationships; Cypher is purpose-built for path queries |
 | Credential encryption | AES-256-GCM in DB | AWS Secrets Manager, HashiCorp Vault | Zero external dependencies; clear migration path to secrets manager |
 | Tenant isolation | Shared DB + `tenant_id` | One DB per tenant | Simpler ops at current scale; equivalent isolation guarantee via SQLAlchemy scoping |
 | Frontend | Vanilla JS SPA + React/TS | Angular, Vue | Vanilla for zero-build-step demo; React for production component reuse |
 | Observability | Prometheus + Grafana | Datadog, New Relic | Self-hosted; zero cost; provisioned automatically via Docker Compose |
 | LangGraph graph type | `StateGraph` (Cyclic) | `MessageGraph`, linear chains | Cycles required for reflection loops, HITL, and anti-hallucination retries |
+| Audio/Image/Video processing | Direct Celery task (Gemini multimodal) | Custom LangGraph pipeline | Indexing is one-shot, not iterative — no cycles needed; simpler, faster |
+| Cross-pillar intelligence | Neo4j knowledge graph + Nexus worker | Per-query cross-service HTTP calls | Pre-forged relationships enable millisecond graph traversal; avoids live cross-service coupling |

@@ -2,6 +2,9 @@ global:
   scrape_interval: 15s
   evaluation_interval: 15s
 
+rule_files:
+  - 'alerts.yml'
+
 scrape_configs:
   # FastAPI /metrics endpoint (requires prometheus-fastapi-instrumentator)
   - job_name: 'analyst-api'
@@ -14,7 +17,12 @@ scrape_configs:
     static_configs:
       - targets: ['redis-exporter:9121']
 
-  # Celery workers via Flower (optional, if flower is added)
-  # - job_name: 'flower'
-  #   static_configs:
-  #     - targets: ['flower:5555']
+  # Node Exporter for EC2 instances
+  - job_name: 'node_exporter'
+    static_configs:
+      - targets: ['node-exporter:9100']
+
+  # cAdvisor for container resource usage
+  - job_name: 'cadvisor'
+    static_configs:
+      - targets: ['cadvisor:8080']

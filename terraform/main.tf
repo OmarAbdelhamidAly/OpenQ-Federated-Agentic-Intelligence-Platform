@@ -6,10 +6,25 @@ terraform {
       version = "~> 5.0"
     }
   }
+  backend "s3" {
+    bucket         = "openq-terraform-state"
+    key            = "prod/terraform.tfstate"
+    region         = "us-east-1"
+    encrypt        = true
+    dynamodb_table = "openq-terraform-locks"
+  }
 }
 
 provider "aws" {
   region = var.aws_region
+}
+
+# KMS Key for infrastructure encryption
+resource "aws_kms_key" "main" {
+  description             = "KMS key for OpenQ infrastructure"
+  enable_key_rotation     = true
+  deletion_window_in_days = 7
+  tags                    = var.tags
 }
 
 # 1. Networking Layer

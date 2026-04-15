@@ -27,17 +27,35 @@ resource "aws_security_group" "db" {
   tags = var.tags
 }
 
+resource "random_password" "db_password" {
+  length           = 32
+  special          = true
+  override_special = "!#$%&*()-_=+[]{}<>:?"
+}
+
+resource "aws_secretsmanager_secret" "db_password" {
+  name        = "${var.project_name}-db-password"
+  description = "Aurora Cluster Master Password"
+  tags        = var.tags
+}
+
+resource "aws_secretsmanager_secret_version" "db_password" {
+  secret_id     = aws_secretsmanager_secret.db_password.id
+  secret_string = random_password.db_password.result
+}
+
 resource "aws_rds_cluster" "main" {
   cluster_identifier      = "${var.project_name}-aurora-cluster"
   engine                  = "aurora-postgresql"
-  engine_mode             = "provisioned" # Default for Serverless v2
+  engine_mode             = "provisioned"
   engine_version          = "16.1"
   database_name           = "analyst_agent"
   master_username         = "postgres"
-  master_password         = "openq_secure_password_123" # Should be in AWS Secrets Manager
+  master_password         = random_password.db_password.result
   db_subnet_group_name    = aws_db_subnet_group.main.name
   vpc_security_group_ids  = [aws_security_group.db.id]
   skip_final_snapshot     = true
+  storage_encrypted       = true
 
   serverlessv2_scaling_configuration {
     max_capacity = var.db_instance_class.max

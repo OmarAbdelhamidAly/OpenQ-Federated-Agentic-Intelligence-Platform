@@ -55,6 +55,8 @@ resource "aws_eks_cluster" "main" {
     subnet_ids = var.private_subnet_ids
   }
 
+  enabled_cluster_log_types = ["api", "audit", "authenticator", "controllerManager", "scheduler"]
+
   depends_on = [aws_iam_role_policy_attachment.cluster_AmazonEKSClusterPolicy]
 }
 

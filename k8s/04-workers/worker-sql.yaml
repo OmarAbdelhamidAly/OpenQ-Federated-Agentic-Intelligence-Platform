@@ -34,9 +34,30 @@ spec:
           requests:
             cpu: "500m"
             memory: "1Gi"
+        livenessProbe:
+          exec:
+            command:
+            - celery
+            - -A
+            - app.worker
+            - status
+          initialDelaySeconds: 30
+          periodSeconds: 60
+          timeoutSeconds: 10
         volumeMounts:
         - name: tenant-data
           mountPath: /tmp/tenants
       volumes:
       - name: tenant-data
         emptyDir: {} # Placeholder, should be EBS/EFS in Production
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: worker-sql-pdb
+  namespace: openq-workers
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: worker-sql

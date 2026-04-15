@@ -1,8 +1,8 @@
 # 🏛️ Architecture Documentation
 
-**OpenQ — Autonomous Enterprise Data Intelligence Platform**
+**Insightify — Autonomous Multi-Pillar Enterprise Data Intelligence Platform**
 
-> An open, composable alternative to Amazon Q Business, built for organizations sitting on fragmented multi-modal data.
+> An open, composable alternative to Amazon Q Business — built for organizations sitting on fragmented multi-modal, multi-format enterprise data.
 
 ---
 
@@ -13,19 +13,20 @@
 3. [System Overview](#3-system-overview)
 4. [4-Layer Service Architecture](#4-4-layer-service-architecture)
 5. [LangGraph Pipeline Deep-Dive](#5-langgraph-pipeline-deep-dive)
-6. [Security Architecture](#6-security-architecture)
-7. [Data Flow — Full Query Lifecycle](#7-data-flow--full-query-lifecycle)
-8. [Database Schema](#8-database-schema)
-9. [Infrastructure & Deployment](#9-infrastructure--deployment)
-10. [Observability Stack](#10-observability-stack)
-11. [Key Design Decisions](#11-key-design-decisions)
+6. [Knowledge Graph — Neo4j Cross-Pillar Intelligence](#6-knowledge-graph--neo4j-cross-pillar-intelligence)
+7. [Security Architecture](#7-security-architecture)
+8. [Data Flow — Full Query Lifecycle](#8-data-flow--full-query-lifecycle)
+9. [Database Schema](#9-database-schema)
+10. [Infrastructure & Deployment](#10-infrastructure--deployment)
+11. [Observability Stack](#11-observability-stack)
+12. [Key Design Decisions](#12-key-design-decisions)
 
 ---
 
 ## 1. Architectural Principles
 
 **Separation by concern, not by team.**
-Each service owns one concept: the API Gateway owns HTTP concerns (auth, routing, validation), the Governance worker owns policy enforcement, the execution pillars own analysis. No service does two jobs.
+Each service owns one concept: the API Gateway owns HTTP concerns (auth, routing, validation), the Governance worker owns policy enforcement, each execution pillar owns one data modality. No service does two jobs.
 
 **Celery queues as the API between layers.**
 Services communicate only through named Celery queues over Redis. `api → governance queue → pillar.sql queue`. No direct HTTP calls between workers. A worker crash never blocks the API — the job stays in the queue until a healthy worker picks it up.
@@ -40,16 +41,19 @@ A single API deployment serves all tenants. Isolation is enforced by `tenant_id`
 The `Settings` validator crashes startup if `SECRET_KEY` or `AES_KEY` are at their default values when `ENV=production`. You cannot accidentally deploy with weak secrets.
 
 **Observability is not optional.**
-Every service emits structured logs via `structlog`. Prometheus metrics are scraped at `/metrics`. Grafana dashboards are provisioned automatically — no manual setup.
+Every service emits structured logs via `structlog`. Prometheus metrics are scraped at `/metrics`. Grafana dashboards are provisioned automatically — no manual setup required.
 
 **Multi-provider LLM resilience.**
-No single LLM vendor is a hard dependency. The LLM factory implements a fallback chain: `OpenRouter (Gemini 2.0 Flash) → Groq (Llama-3.3-70B) → Gemini Direct API`. A provider outage degrades gracefully without data loss.
+No single LLM vendor is a hard dependency. The LLM factory implements a fallback chain: `OpenRouter (Gemini 2.0 Flash-001) → Groq (Llama-3.3-70B) → Gemini Direct API`. A provider outage degrades gracefully without data loss.
+
+**Knowledge Graph as shared memory.**
+All data pillars (code, audio, image, JSON, SQL, PDF) write extracted entities and relationships into a shared Neo4j graph. The Nexus orchestrator reads this graph to produce cross-domain strategic intelligence without re-processing any source.
 
 ---
 
 ## 2. Clean Architecture per Service
 
-Every microservice (API, governance, worker-sql, worker-csv, worker-json, worker-pdf) follows the same **Clean (Hexagonal) Architecture** layout, enforcing the Dependency Inversion Principle:
+Every microservice follows the same **Clean (Hexagonal) Architecture** layout, enforcing the Dependency Inversion Principle:
 
 ```
 services/{service}/app/
@@ -66,12 +70,13 @@ services/{service}/app/
 │   └── {modality}/
 │       ├── workflow.py        ← LangGraph StateGraph definition
 │       ├── agents/            ← Each agent = one graph node (pure async functions)
-│       └── tools/             ← Langchain Tools wrapping external calls
+│       └── tools/             ← LangChain Tools wrapping external calls
 │
 ├── infrastructure/            ← Frameworks & Drivers (outermost ring)
 │   ├── config.py              ← Pydantic Settings — reads env vars, validates on startup
 │   ├── database/postgres.py   ← SQLAlchemy async engine + session factory
 │   ├── llm.py                 ← LLM factory: OpenRouter → Groq → Gemini fallback chain
+│   ├── neo4j_adapter.py       ← Neo4j async client — batch upsert, Cypher execution
 │   └── adapters/
 │       ├── encryption.py      ← AES-256-GCM credential encryption
 │       ├── qdrant.py          ← Qdrant async client adapter
@@ -89,53 +94,49 @@ services/{service}/app/
 ## 3. System Overview
 
 ```
-┌──────────────────────────────────────────────────────────────────────────┐
-│                         EXTERNAL WORLD                                   │
-│                                                                          │
-│  Browser / API client   OpenRouter / Gemini 2.0 Flash   Qdrant Cloud     │
-│       │                         ▲                            ▲           │
-└───────┼─────────────────────────┼────────────────────────────┼───────────┘
-        │ HTTPS :8002             │ HTTPS                      │ :6333
-┌───────▼─────────────────────────┼────────────────────────────┼───────────┐
-│                  DOCKER COMPOSE NETWORK                       │           │
-│                                 │                             │           │
-│  ┌────────────────────────────────────────────────────────────┐           │
-│  │  API GATEWAY  (services/api · :8002)                       │           │
-│  │  FastAPI · Async SQLAlchemy · JWT · AES-256-GCM            │           │
-│  └───────────────────────────┬────────────────────────────────┘           │
-│                               │ Celery tasks via Redis broker             │
-│                        ┌──────▼──────┐                                   │
-│                        │    REDIS    │ Broker + result backend            │
-│                        │             │ + JWT JTI blacklist                │
-│                        │             │ + LangGraph HITL checkpoints       │
-│                        └──────┬──────┘                                   │
-│           ┌───────────────────┼────────────────────┐                     │
-│           ▼                   ▼                    ▼                     │
-│  ┌────────────────┐  ┌──────────────┐  ┌───────────────────────────────┐ │
-│  │  GOVERNANCE    │  │  WORKER-SQL  │  │  WORKER-CSV / JSON / PDF      │ │
-│  │  (Layer 2)     │  │  (Layer 3)   │  │  (Layer 3)                    │ │
-│  │  2-node graph  │  │  12-node     │  │  CSV: 11 nodes                │ │
-│  │  intake →      │  │  Cyclic      │  │  JSON: 10 nodes               │ │
-│  │  guardrail     │  │  StateGraph  │  │  PDF: 10 nodes (Orchestrator) │ │
-│  └────────────────┘  └──────────────┘  └───────────────────────────────┘ │
-│           │                   │                    │                     │
-│           └───────────────────┼────────────────────┘                     │
-│                               │ export queue                             │
-│                        ┌──────▼──────┐                                   │
-│                        │  EXPORTER   │ (Layer 4) PDF/XLSX/JSON           │
-│                        └─────────────┘                                   │
-│                                                                           │
-│  ┌──────────────┐  ┌────────────┐  ┌───────────────────────────────────┐  │
-│  │  PostgreSQL  │  │   Qdrant   │  │     Shared Volume ./tenants/      │  │
-│  │  :5433       │  │   :6333    │  │  Uploaded files · Exported reports│  │
-│  │  Metadata DB │  │  JSON RAG  │  └───────────────────────────────────┘  │
-│  └──────────────┘  └────────────┘                                         │
-│                                                                           │
-│  ┌─────────────────┐  ┌─────────────────┐                                │
-│  │   Prometheus    │  │     Grafana     │ Observability stack            │
-│  │   :9090         │  │     :3000       │                                │
-│  └─────────────────┘  └─────────────────┘                                │
-└───────────────────────────────────────────────────────────────────────────┘
+┌────────────────────────────────────────────────────────────────────────────┐
+│                            EXTERNAL WORLD                                  │
+│                                                                            │
+│  Browser / API client     OpenRouter / Gemini 2.0 Flash    Qdrant Cloud    │
+│       │                           ▲                              ▲         │
+└───────┼───────────────────────────┼──────────────────────────────┼─────────┘
+        │ HTTPS :8002               │ HTTPS                        │ :6333
+┌───────▼───────────────────────────┼──────────────────────────────┼─────────┐
+│                   DOCKER COMPOSE NETWORK                          │         │
+│                                   │                               │         │
+│ ┌───────────────────────────────────────────────────────────────────┐       │
+│ │  API GATEWAY  (services/api · :8002)                              │       │
+│ │  FastAPI · Async SQLAlchemy · JWT · AES-256-GCM                   │       │
+│ └────────────────────────┬──────────────────────────────────────────┘       │
+│                          │ Celery tasks via Redis broker                    │
+│                   ┌──────▼──────┐                                          │
+│                   │    REDIS    │ Broker + result backend                   │
+│                   │             │ JWT JTI blacklist                         │
+│                   │             │ LangGraph HITL checkpoints                │
+│                   │             │ Semantic cache                            │
+│                   └──────┬──────┘                                          │
+│       ┌───────────────────┼──────────────────────┐                         │
+│       ▼                   ▼                       ▼                         │
+│ ┌──────────────┐   ┌─────────────┐   ┌────────────────────────────────┐    │
+│ │ GOVERNANCE   │   │ worker-sql  │   │ worker-csv / json / pdf / code │    │
+│ │ (2-node)     │   │ (12-node)   │   │ audio / image / video / nexus  │    │
+│ └──────────────┘   └─────────────┘   └────────────────────────────────┘    │
+│                                │ export queue                               │
+│                         ┌──────▼──────┐                                    │
+│                         │  EXPORTER   │ (Layer 4) PDF/XLSX/JSON            │
+│                         └─────────────┘                                    │
+│                                                                             │
+│  ┌─────────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐  │
+│  │ PostgreSQL  │  │ Qdrant   │  │  Neo4j   │  │ MongoDB  │  │ Shared   │  │
+│  │ :5433       │  │ :6333    │  │  :7687   │  │ :27017   │  │ Volume   │  │
+│  │ Metadata DB │  │ RAG      │  │ KG Graph │  │ JSON Docs│  │ ./tenant │  │
+│  └─────────────┘  └──────────┘  └──────────┘  └──────────┘  └──────────┘  │
+│                                                                             │
+│  ┌──────────────┐  ┌──────────────┐  ┌─────────────────────────────────┐   │
+│  │  Prometheus  │  │   Grafana    │  │   Apache Superset :8088         │   │
+│  │  :9090       │  │   :3000      │  │   Embedded analytics            │   │
+│  └──────────────┘  └──────────────┘  └─────────────────────────────────┘   │
+└─────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ---
@@ -146,7 +147,7 @@ services/{service}/app/
 
 The only public-facing service. Handles HTTP, auth, file storage, and Celery dispatch. Never executes analysis logic directly.
 
-**Routing table:**
+**Routing table (11 router modules):**
 
 | Endpoint Group | Responsibility |
 |---|---|
@@ -158,26 +159,28 @@ The only public-facing service. Handles HTTP, auth, file storage, and Celery dis
 | `/metrics/*` | Job analytics, latency stats, tenant usage |
 | `/reports/*` | Async export dispatch + signed download URLs |
 | `/groups/*` | Team group management for multi-user tenants |
-| `/voice/*` | Voice-to-text query submission |
-| `/superset/*` | Apache Superset embedded analytics proxy |
+| `/voice/*` | Voice-to-text query submission (audio → transcription → analysis queue) |
+| `/superset/*` | Apache Superset embedded analytics proxy with guest token |
+| `/health` | Deep health check (PostgreSQL + Redis + Celery workers) |
 
 **Key infrastructure modules:**
 
 ```
 infrastructure/
 ├── config.py           Pydantic Settings — validates env vars on startup
-├── security.py         JWT access (30min) + refresh (7 days) + bcrypt
+│                       Crashes in production if SECRET_KEY or AES_KEY are default
+├── security.py         JWT access (30min) + refresh (7 days) + bcrypt + JTI
 ├── sql_guard.py        3-layer SQL injection prevention
 ├── middleware.py       CORS · rate limiting (slowapi) · security headers
-├── token_blacklist.py  Redis-backed JTI revocation set
+├── token_blacklist.py  Redis-backed JTI revocation set (TTL = token remaining lifetime)
 ├── llm.py              Multi-provider factory: OpenRouter → Groq → Gemini
 └── adapters/
     ├── encryption.py   AES-256-GCM — encrypt/decrypt SQL connection strings
-    ├── qdrant.py       Async Qdrant client — multi-vector upsert + search
+    ├── qdrant.py       Async Qdrant client — multi-vector upsert + similarity search
     └── storage.py      Tenant-scoped file path resolution
 ```
 
-**Self-healing startup:** The `lifespan` context manager acquires a PostgreSQL advisory lock, then runs idempotent `CREATE TABLE IF NOT EXISTS` and `ALTER TABLE ADD COLUMN IF NOT EXISTS` on every deploy. Lock timeout is 5s per statement to prevent startup hangs on a loaded database.
+**Self-healing startup:** The `lifespan` context manager acquires a PostgreSQL advisory lock, then runs idempotent `CREATE TABLE IF NOT EXISTS` and `ALTER TABLE ADD COLUMN IF NOT EXISTS` on every deploy. Lock timeout is 5s per statement. Adding a new column = deploying new code, no migration script, no downtime.
 
 ---
 
@@ -188,43 +191,43 @@ Dedicated Celery worker on the `governance` queue. Every analysis job passes thr
 **LangGraph graph (2 nodes):**
 ```
 START → [intake_agent] → check_intake → [guardrail_agent] → route_to_pillar → END
-                               │
-                               └── clarification_needed → END (asks user to rephrase)
+                                │
+                                └── clarification_needed → END (asks user to rephrase)
 ```
 
 **Intake Agent responsibilities:**
 - Classify question intent: `trend | comparison | ranking | correlation | anomaly`
-- Extract named entities (table names, column names, date ranges)
-- Detect ambiguous or underspecified questions
+- Extract named entities (table names, column names, date ranges, metric names)
+- Detect ambiguous or underspecified questions, request clarification
 - Assign complexity index (1–5) based on entity count and join requirements
 
 **Guardrail Agent responsibilities:**
 - Load active policies for the tenant from PostgreSQL
-- LLM semantic check: does this question violate any policy?
+- LLM semantic check: does this question violate any admin policy?
 - PII detection: would the answer expose sensitive columns?
 - If violation: set job to `error` status with a human-readable explanation
 
-The bypass path: `auto_analysis` system user (`user_id == "auto_analysis"`) skips governance — background analyses triggered on upload are system-generated and policy-safe by construction.
+**Bypass path:** `auto_analysis` system user (`user_id == "auto_analysis"`) skips governance — background analyses triggered on upload are system-generated and policy-safe by construction.
 
 ---
 
-### Layer 3 — Execution Pillars
+### Layer 3 — Execution Pillars (8 specialized workers)
 
-Four independently scalable Celery workers:
+Each pillar is a separate Docker container with its own `requirements.txt`, independently scalable on Kubernetes.
+
+All workers share the same **Clean Architecture layout** and use `structlog` for structured JSON logging with automatic `job_id` context binding.
 
 ```
-worker-sql   → queues: pillar.sql, pillar.sqlite, pillar.postgresql
-worker-csv   → queue:  pillar.csv
-worker-json  → queue:  pillar.json
-worker-pdf   → queue:  pillar.pdf
-worker-code  → queue:  pillar.code
-worker-nexus → queue:  pillar.nexus
-worker-audio/image/video → queue: pillar.audio / pillar.image / pillar.video
+worker-sql    → queues: pillar.sql, pillar.sqlite, pillar.postgresql
+worker-csv    → queue:  pillar.csv
+worker-json   → queue:  pillar.json
+worker-pdf    → queue:  pillar.pdf
+worker-code   → queue:  pillar.code
+worker-audio  → queue:  pillar.audio
+worker-image  → queue:  pillar.image
+worker-video  → queue:  pillar.video
+worker-nexus  → queue:  pillar.nexus
 ```
-
-Each worker is a separate Docker container with its own `requirements.txt`. The SQL worker can scale to 10 replicas without affecting CSV or PDF processing.
-
-All workers share the same **Clean Architecture layout** and the same **`AnalysisState` TypedDict** (defined in `domain/analysis/entities.py`) as the LangGraph state schema.
 
 ---
 
@@ -288,16 +291,15 @@ route_after_generator
                                        [visualization]   ← Selects chart type per intent + data shape
                                              │              Generates ECharts/Plotly JSON spec
                                              ▼
-                                        [insight]        ← 3–5 sentence executive summary
+                                          [insight]       ← 3–5 sentence executive summary
                                              │              Grounded in actual row values + kb_context
                                              ▼
-                                        [verifier]       ← Quality gate: insight vs data
+                                          [verifier]      ← Quality gate: insight vs data
                                              │              Prevents hallucinated insights
                                              ▼
-                                    [recommendation]     ← 3 actionable next steps
+                                      [recommendation]   ← 3 actionable next steps
                                              ▼
-                                      [save_cache]       ← Saves {question → result} to semantic cache
-                                             │              Enables fast retrieval of similar future queries
+                                        [save_cache]     ← Saves {question → result} to semantic cache
                                              ▼
                                    [output_assembler]    ← Builds final JSON envelope
                                              │              Writes AnalysisResult to PostgreSQL
@@ -307,7 +309,7 @@ route_after_generator
 ```
 
 **Self-healing mechanisms:**
-- **Zero-Row Reflection:** `row_count=0` triggers `reflection_context` injection. The reflection agent analyzes the SQL, compares literals against `low_cardinality_values`, detects case mismatches, and injects a corrective hint. Max 3 retries.
+- **Zero-Row Reflection:** `row_count=0` triggers `reflection_context` injection. The reflection node analyzes the SQL, compares literals against `low_cardinality_values`, detects case mismatches, and injects a corrective hint. Max 3 retries.
 - **Error Reflection:** Any runtime SQL error routes to `reflection` → `execution` (bypasses `analysis_generator` to avoid generating a simpler fallback query).
 - **Verifier Agent:** Quality gate between insight and recommendation — rejects insights not supported by actual data.
 
@@ -334,27 +336,27 @@ needs_cleaning? (data_quality_score < 0.9)
                  │               Returns summary stats + structured data
                  │
 check_analysis_result
-  ├── error + retry < 3 → [reflection]  ← Repairs Python code errors, increments retry_count
+  ├── error + retry < 3 → [reflection]  ← Repairs Python/Pandas code errors
   │                            └──► [analysis]  (retry loop)
   └── success → [visualization]  ← Plotly/ECharts chart spec
-                      │
-                      ▼
-                 [insight]         ← Executive summary grounded in computed statistics
-                      ▼
-                 [verifier]        ← Quality gate
-                      ▼
-               [recommendation]   ← 3 next steps based on statistical findings
-                      ▼
-           [output_assembler]     ← Final JSON → PostgreSQL write
-                      ▼
-              [save_cache]        ← Semantic cache save → END
+                     │
+                     ▼
+                [insight]         ← Executive summary grounded in computed statistics
+                     ▼
+                [verifier]        ← Quality gate
+                     ▼
+             [recommendation]    ← 3 next steps based on statistical findings
+                     ▼
+         [output_assembler]      ← Final JSON → PostgreSQL write
+                     ▼
+             [save_cache]        ← Semantic cache save → END
 ```
 
 ---
 
 ### JSON Pipeline — 10 Nodes (Directed Cyclic StateGraph)
 
-Backed by **MongoDB** for document intelligence over semi-structured JSON stores, with **Qdrant** for semantic decomposition and vector search.
+Backed by **MongoDB** for document intelligence over semi-structured JSON stores, with **Qdrant** (768d vectors) for semantic retrieval.
 
 ```
 START
@@ -373,16 +375,16 @@ check_analysis_result
   ├── error + retry < 3 → [reflection]  ← Fixes MongoDB query errors
   │                            └──► [analysis]
   └── success → [visualization]
-                    ▼
-               [insight]
-                    ▼
-               [verifier]
-                    ▼
-           [recommendation]
-                    ▼
-         [output_assembler]
-                    ▼
-            [save_cache] → END
+                     ▼
+                [insight]
+                     ▼
+                [verifier]
+                     ▼
+            [recommendation]
+                     ▼
+          [output_assembler]
+                     ▼
+             [save_cache] → END
 ```
 
 ---
@@ -414,7 +416,7 @@ route_after_router
                 ├── mode="fast_text"      → [text_synthesis]
                 └── mode="hybrid"         → [ocr_synthesis]
 
-           [vision_synthesis]    ← Gemini 2.0 Flash Vision: PDF pages rendered as images,
+           [vision_synthesis]    ← Gemini 2.0 Flash Vision: PDF pages rendered as JPEG images,
                 │                   base64-encoded, sent to multimodal LLM for synthesis
                 │
            [text_synthesis]      ← Fast text extraction + LLM synthesis for clean PDFs
@@ -434,72 +436,102 @@ route_after_router
 ```
 
 **Three Synthesis Engines:**
+
 | Engine | Mode | Use Case |
 |---|---|---|
 | `vision_synthesis` (Gemini 2.0 Flash Vision) | `deep_vision` | PDFs with charts, tables, diagrams — preserves visual layout |
 | `text_synthesis` | `fast_text` | Clean text-based PDFs — fast extraction, sub-second latency |
 | `ocr_synthesis` | `hybrid` | Scanned documents, low-quality images — OCR pre-processing |
 
-### OCR Synthesis (Part of PDF Pipeline)
-This node does specialized PaddleOCR extraction.
-
 ---
 
-### Codebase Pipeline — 8 Nodes (Cyclic StateGraph)
+### Code Pipeline — 8 Nodes (Cyclic StateGraph, Neo4j)
 
-A specialized pipeline analyzing full source code repositories mapped into an Abstract Syntax Tree (AST) in Neo4j.
+A specialized pipeline analyzing full source code repositories mapped as an Abstract Syntax Tree (AST) in Neo4j. Pure Cypher-based reasoning — no file reading at query time.
 
 ```
 START
   │
   ▼
-[data_discovery]     ← Neo4j APOC connection. Discovers graph schema,
-  │                     labels (Class, Function, File), and relationships
+[discovery]     ← Neo4j APOC connection: builds graph schema description,
+  │               discovers labels (Class, Function, File), relationship types,
+  │               live stats (node counts, avg degree), sample node summaries
   ▼
-[guardrail]          ← Policy enforcement for source code queries
-  ▼
-[cypher_generator]   ← ReAct agent natively writing Cypher queries
-  │                     against the Neo4j schema
+[generator]     ← LLM: transforms natural-language question → Cypher query
+  │               Uses schema description as context for accurate node/rel targeting
   │
-check_cypher_result
-  ├── error + retry < 3 → [reflection]  ← Repairs invalid Cypher syntax
-  │                            └──► [cypher_generator]
-  └── success → [insight]
-                    ▼
-               [verifier]
-                    ▼
-           [memory_manager]    ← Episodic memory: updates conversational running summary
-                    ▼
-          [output_assembler]
-                    ▼
-             [save_cache] → END
+route_after_generator
+  ├── error + retry < MAX_RETRIES  → [reflection] → [generator]  (retry loop)
+  ├── error + retry >= MAX_RETRIES → END
+  └── no error → [execution]
+                     │  Runs Cypher against Neo4j via shared pool singleton
+                     │  No new TCP connections per request
+                     │
+route_after_execution
+  ├── error + retry < MAX_RETRIES → [reflection] → [generator]
+  └── no error → [insight]
+                     │  LLM: execution_results + code snippets → narrative explanation
+                     ▼
+                 [memory]          ← memory_manager_agent: sliding window episodic summary
+                     ▼
+                 [save_cache]      ← Saves question+Cypher+result to semantic cache
+                     ▼
+                 [assembler]       ← Final JSON → PostgreSQL write → END
 ```
 
 ---
 
-### Nexus Strategic Pipeline — 6 Nodes (Federated Orchestrator)
+### Audio / Image / Video Pipelines — Direct Task (Gemini Multimodal)
 
-The ultimate federator. Triggers and consolidates queries across SQL, CSV, JSON, PDF, and Code pillars.
+These three workers use a **direct Celery task** pattern rather than a LangGraph graph, because their primary job is discovery/indexing (not iterative reasoning).
+
+**Audio worker (`worker-audio`):**
+1. Extract metadata + 30-second base64 sample via `pydub`
+2. Send to Gemini 1.5 Flash (OpenRouter) — multimodal: text prompt + audio data URI
+3. LLM returns structured JSON: `{transcript, speakers, summary, topics, entities, language}`
+4. Entities synced to Neo4j via `batch_upsert_multimodal_entities`
+5. `schema_json` updated on the `data_sources` row → `indexing_status = "done"`
+
+**Image / Video workers** follow the same pattern — upload → Gemini multimodal call → entity extraction → Neo4j sync → status update.
+
+---
+
+### Nexus Pipeline — 6 Nodes (Federated Orchestrator)
+
+The strategic intelligence layer. Reads the shared Neo4j knowledge graph to produce a **5-pillar Executive Strategic Intelligence Report**.
 
 ```
 START
   │
   ▼
-[nexus_router]       ← Determines which underlying pillars (workers) can
-  │                     answer fractions of the strategic query
+[router]         ← nexus_router: routes based on query complexity
+  │               "explore" → [explorer] → [orchestrator]
+  │               "direct_query" → [orchestrator]
+  │               "finalize" → [synthesizer]
   ▼
-[graph_explorer]     ← Spawns async Celery tasks to `pillar.sql`, `pillar.code`, etc.
-  │                     Waits for distributed results (Scatter-Gather pattern)
+[explorer]       ← graph_explorer: discovers available pillars and Neo4j context
   ▼
-[synthesis_engine]   ← Ultimate synthesis of cross-domain structured and unstructured data
+[orchestrator]   ← pillar_orchestrator (inner StateGraph):
+  │               Node 1 — discovery_node: forge_cross_source_links() in Neo4j
+  │                         Creates Code↔SQL, Entity↔Target, Chunk↔Mention relationships
+  │               Node 2 — gather_context_node:
+  │                         Pulls all Neo4j entities + cross-links per source_id
+  │                         Fetches Postgres schema/metadata per source
+  │               Node 3 — synthesis_node:
+  │                         Buckets entities by pillar type (sql/csv/json/pdf/codebase)
+  │                         Builds structured cross-pillar context block
+  │                         LLM (Gemini 2.0 Flash) generates 5-section report:
+  │                           1. Executive Summary
+  │                           2. 5-Pillar Cross-Domain Findings
+  │                           3. Compliance & Policy Assessment
+  │                           4. Data Architecture Risks & Anomalies
+  │                           5. Strategic Recommendations
   ▼
-[memory_manager]     ← Global organizational memory
+[synthesizer]    ← synthesis_engine: final cross-pillar consolidation
   ▼
-[verifier]           ← Strategic hallucination check
+[memory]         ← memory_manager: episodic memory via Qdrant semantic similarity
   ▼
-[output_assembler]
-  ▼
-[save_cache] → END
+[save_cache]     ← saves question+synthesis to semantic cache → END
 ```
 
 ---
@@ -514,7 +546,42 @@ START → [intake_agent] → check_intake → [guardrail_agent] → route_to_pil
 
 ---
 
-## 6. Security Architecture
+## 6. Knowledge Graph — Neo4j Cross-Pillar Intelligence
+
+Neo4j acts as the **shared organizational memory** across all data pillars. Every worker writes entities into the graph. The Nexus orchestrator reads and forges cross-pillar relationships.
+
+### Entity Types by Pillar
+
+| Pillar | Neo4j Node Labels |
+|---|---|
+| `worker-code` | `Class`, `Function`, `File`, `Module` |
+| `worker-audio` | `Speaker`, `Topic`, `Entity` (person/company/product) |
+| `worker-image` | `Object`, `Scene`, `Entity` |
+| `worker-video` | `Scene`, `Event`, `Entity` |
+| `worker-json` | `JSONField`, `JSONDocument` |
+| `worker-sql` / `worker-csv` | `DatasetColumn`, `Table` |
+| `worker-pdf` | `Chunk`, `DocumentPage` |
+
+### Cross-Pillar Relationship Types
+
+| Relationship | Connects |
+|---|---|
+| `REPRESENTS_DATA` | Code `Class` → SQL `Table` |
+| `ENTITY_TARGET` | Audio/Image `Entity` → SQL `Table` or `DatasetColumn` |
+| `CHUNK_MENTION` | PDF `Chunk` → Code `Function` or SQL `Table` |
+
+### Forge Algorithm (`Neo4jAdapter.forge_cross_source_links`)
+
+```
+For all source_id pairs:
+  1. Match Class nodes (code) → Table nodes (sql) by name similarity → CREATE :REPRESENTS_DATA
+  2. Match Entity nodes (audio/image) → Table/Column nodes (sql) by name similarity → CREATE :ENTITY_TARGET
+  3. Match Chunk nodes (pdf) → Function/Table nodes → CREATE :CHUNK_MENTION
+```
+
+---
+
+## 7. Security Architecture
 
 ### JWT Authentication Flow
 
@@ -535,7 +602,7 @@ Access Token Expired
 
 POST /auth/logout {refresh_token}
   └── ADD refresh_token JTI to Redis blacklist (SET with TTL = remaining token lifetime)
-      └── Token is permanently dead — even if someone captured it, it's worthless
+      └── Token is permanently dead — even if captured, it is worthless
 ```
 
 ### SQL Guard — 3 Layers in Sequence
@@ -574,7 +641,7 @@ def encrypt_json(data: dict, key: bytes) -> str:
     return base64.b64encode(nonce + ciphertext).decode()
 ```
 
-The `AES_KEY` env var is the only key material. Loss of the key = permanent loss of all encrypted SQL credentials by design.
+The `AES_KEY` env var is the only key material. Loss of the key = permanent loss of all encrypted SQL credentials by design. Migrate to a secrets manager by replacing `encrypt_json/decrypt_json` with SDK calls.
 
 ### Multi-Provider LLM Fallback Chain
 
@@ -593,7 +660,7 @@ def get_llm(temperature=0, model=None) -> BaseChatModel:
 
 ---
 
-## 7. Data Flow — Full Query Lifecycle
+## 8. Data Flow — Full Query Lifecycle
 
 ```
 User types: "What are the top 5 products by revenue in Q4?"
@@ -612,7 +679,7 @@ Redis receives task
   ▼
 Governance Worker
   6. Fetch job + data source from PostgreSQL
-  7. Decrypt config_encrypted → connection_string (in memory only)
+  7. Decrypt config_encrypted → connection_string (in memory only, never logged)
   8. intake_agent → intent="ranking", entities=["products","revenue","Q4"]
   9. guardrail_agent → load tenant policies → no violations
   10. pillar_task.apply_async(args=[job_id], queue="pillar.sql")
@@ -626,8 +693,8 @@ SQL Worker
       WHERE s.quarter = 'Q4'
       GROUP BY p.name ORDER BY total DESC LIMIT 5
   14. route_after_generator → user job → [human_approval] INTERRUPT
-  15. graph state serialized to Redis via AsyncRedisSaver
-  16. Job status → "awaiting_approval". Worker exits cleanly.
+  15. graph state serialized to Redis via AsyncRedisSaver (key: checkpoint:{thread_id})
+  16. Job status → "awaiting_approval". Worker exits cleanly (Celery task slot freed).
 
 Client polls GET /analysis/{job_id}
   ← { status: "awaiting_approval", generated_sql: "SELECT p.name..." }
@@ -639,7 +706,7 @@ Admin reviews SQL in UI. Clicks "Approve".
 API Gateway
   17. Verify admin role
   18. Update job status → "running"
-  19. Patch LangGraph state in Redis: { approval_granted: True }
+  19. aupdate_state({approval_granted: True}) → patches Redis checkpoint
   20. pillar_task.apply_async(args=[job_id], queue="pillar.sql")
 
 SQL Worker resumes from Redis checkpoint
@@ -649,20 +716,20 @@ SQL Worker resumes from Redis checkpoint
   24. [insight] → "Product A led Q4 with $2.3M, 28% of quarterly total..."
   25. [verifier] → insight references row values ✓
   26. [recommendation] → ["Prioritize Product A inventory...", ...]
-  27. [save_cache] → saves question+result to semantic cache (Redis/Qdrant)
+  27. [save_cache] → saves question+result to semantic cache (Qdrant)
   28. [output_assembler] → build AnalysisResult JSON
   29. INSERT AnalysisResult → UPDATE job status → "done"
 
 Client polls GET /analysis/{job_id} ← { status: "done" }
 Client fetches GET /analysis/{job_id}/result
-  ← { charts, insight_report, recommendations, data_snapshot }
+  ← { charts, insight_report, exec_summary, recommendations, follow_up_suggestions, data_snapshot }
 ```
 
-Total time (typical): 8–18 seconds from query submission to result, excluding HITL pause.
+**Total time (typical):** 8–18 seconds from query submission to result, excluding HITL pause.
 
 ---
 
-## 8. Database Schema
+## 9. Database Schema
 
 **Entity Relationship:**
 
@@ -690,71 +757,204 @@ users >── team_groups (FK: group_id)
 
 `complexity_index INTEGER` — assigned by the intake agent (1–5 scale). Drives UI complexity indicators and future SLA routing.
 
+`indexing_status VARCHAR` — tracks Neo4j / Qdrant indexing status for audio, image, video, and code sources. Drives the availability of Nexus cross-pillar intelligence.
+
 ---
 
-## 9. Infrastructure & Deployment
+## 10. Infrastructure & Deployment
 
-### Docker Compose — 12 Services
+### Kubernetes Namespace Layout
 
-```yaml
-services:
-  postgres:      # PostgreSQL 16 — metadata database
-  redis:         # Redis Stack — broker + cache + JWT blacklist + HITL checkpoints
-  qdrant:        # Qdrant — vector database for JSON RAG
-  api:           # FastAPI gateway :8002 + static SPA
-  governance:    # Celery worker — governance queue
-  worker-sql:    # Celery worker — pillar.sql/.sqlite/.postgresql queues
-  worker-csv:    # Celery worker — pillar.csv queue
-  worker-json:   # Celery worker — pillar.json queue
-  worker-pdf:    # Celery worker — pillar.pdf queue
-  exporter:      # Celery worker — export queue
-  prometheus:    # Metrics collection :9090
-  grafana:       # Dashboards :3000
+All K8s resources are split across **two namespaces** for security isolation:
+
+| Namespace | Contents |
+|---|---|
+| `openq-core` | API Gateway, Frontend, Governance worker, Exporter |
+| `openq-workers` | All Celery pillar workers (SQL, CSV, JSON, PDF, Code, Nexus, Multimedia) |
+
+### K8s Directory Structure (numbered apply order)
+
+```
+k8s/
+├── 01-namespaces.yaml          # openq-core + openq-workers namespaces
+├── 02-config.yaml              # ConfigMap (LLM models, auth config) + Secret
+├── 03-core/
+│   ├── api-gateway.yaml          # Deployment (2 replicas) + ClusterIP Service
+│   └── frontend.yaml             # React SPA Deployment (2 replicas) + ClusterIP Service
+├── 04-workers/
+│   ├── exporter-governance.yaml  # Exporter + Governance (co-located, openq-core)
+│   ├── worker-sql.yaml           # pillar.sql/.sqlite/.postgresql, concurrency=4
+│   ├── worker-csv.yaml           # pillar.csv
+│   ├── worker-json.yaml          # pillar.json
+│   ├── worker-pdf.yaml           # TWO deployments: indexing (queue:knowledge) + analysis (queue:pillar.pdf)
+│   ├── worker-code.yaml          # pillar.code, Neo4j URI injected
+│   ├── worker-nexus.yaml         # pillar.nexus, Neo4j + Qdrant URIs injected
+│   └── worker-multimedia.yaml    # 3 containers in 1 pod: audio + image + video workers
+└── 05-ingress/
+    └── alb-ingress.yaml          # AWS ALB Ingress: /api → api-service, / → frontend-service
 ```
 
-All workers share `tenant_uploads` volume for file access. Redis is the only inter-service communication channel.
+**Apply order:**
+```bash
+kubectl apply -f k8s/01-namespaces.yaml
+kubectl apply -f k8s/02-config.yaml
+kubectl apply -f k8s/03-core/
+kubectl apply -f k8s/04-workers/
+kubectl apply -f k8s/05-ingress/alb-ingress.yaml
+```
 
-### Kubernetes — Production
+### Worker Resource Limits (actual from manifests)
 
-- **HPA:** analysis workers auto-scale based on Celery queue depth (custom metric via Prometheus adapter)
-- **PVC:** PostgreSQL and Qdrant data persistence across pod restarts
-- **Ingress:** TLS termination + path routing
-- **Namespace:** all resources in `analyst-ai` namespace
-- **Secrets:** Kubernetes Secrets for `GEMINI_API_KEY`, `GROQ_API_KEY`, `SECRET_KEY`, `AES_KEY`
+| Deployment | Namespace | Queues | CPU limit | Memory limit | Notes |
+|---|---|---|---|---|---|
+| `api-gateway` | `openq-core` | — (HTTP) | 1000m | 2Gi | 2 replicas |
+| `frontend` | `openq-core` | — (HTTP) | 500m | 512Mi | 2 replicas |
+| `governance` | `openq-core` | `governance,celery` | 500m | 1Gi | concurrency=2 |
+| `exporter` | `openq-core` | `export` | 500m | 1Gi | concurrency=2 |
+| `worker-sql` | `openq-workers` | `pillar.sql/.sqlite/.postgresql` | 1500m | 2Gi | concurrency=4 |
+| `worker-csv` | `openq-workers` | `pillar.csv` | — | — | — |
+| `worker-json` | `openq-workers` | `pillar.json` | — | — | — |
+| `worker-pdf-indexing` | `openq-workers` | `knowledge` | 3000m | 14Gi | HuggingFace model cache |
+| `worker-pdf-analysis` | `openq-workers` | `pillar.pdf` | 3000m | 14Gi | concurrency=3 |
+| `worker-code` | `openq-workers` | `pillar.code` | 1500m | 4Gi | Neo4j URI injected |
+| `worker-nexus` | `openq-workers` | `pillar.nexus` | 1000m | 2Gi | Neo4j + Qdrant URIs |
+| `worker-multimedia` | `openq-workers` | `pillar.audio/image/video` | — | — | 3 containers in 1 Pod |
 
-### Self-Healing Database Migration
+> **PDF worker is split into 2 deployments:** `worker-pdf-indexing` handles knowledge base ingestion (`queue: knowledge`), `worker-pdf-analysis` handles analysis queries (`queue: pillar.pdf`). Both use the same Docker image with `WORKER_TYPE` env var to switch behaviour.
 
-On every startup, the API acquires a PostgreSQL advisory lock and runs:
-1. `Base.metadata.create_all` — creates missing tables (idempotent)
-2. `ALTER TABLE ... ADD COLUMN IF NOT EXISTS` — adds new columns individually
-3. FK constraint checks via `DO $$ BEGIN ... EXCEPTION WHEN ...` blocks
+### Authentication — Local vs Production
 
-Adding a new column requires only deploying new code — no migration script, no downtime.
+| Strategy | `ENV` value | Mechanism |
+|---|---|---|
+| **JWT (local/dev)** | `development` | Local `python-jose` signing, bcrypt, Redis JTI blacklist |
+| **Auth0 (production)** | `production` | `AUTH_STRATEGY=auth0`, JWKS endpoint validation, SSO + MFA |
+
+In production, `AUTH0_DOMAIN`, `AUTH0_AUDIENCE`, and `AUTH0_CLIENT_ID` are provided via ConfigMap (`02-config.yaml`). Secrets (`OPENROUTER_API_KEY`, `GEMINI_API_KEY`, `SECRET_KEY`, `AES_KEY`) are stored in a Kubernetes Secret (`openq-secrets`).
+
+### Per-Pillar LLM Model Configuration
+
+Each worker consumes its own `LLM_MODEL_*` variable from the ConfigMap:
+
+| ConfigMap Key | Production Value | Rationale |
+|---|---|---|
+| `LLM_MODEL` | `google/gemini-2.0-flash-001` | Default — CSV, JSON, Governance |
+| `LLM_MODEL_SQL` | `google/gemini-2.0-flash-001` | High-accuracy SQL generation |
+| `LLM_MODEL_PDF` | `google/gemini-2.0-flash-lite-001` | Cost-optimised for large PDF batches |
+| `LLM_MODEL_CODE` | `deepseek/deepseek-chat-v3-0324` | Code-native model for Cypher generation |
+| `LLM_MODEL_NEXUS` | `google/gemini-2.0-flash-001` | Strategic synthesis — high capacity |
+| `LLM_MODEL_FAST` | `meta-llama/llama-3.2-3b-instruct` | Audio/video metadata — lightweight |
+| `LLM_MODEL_VISION` | `meta-llama/llama-3.2-11b-vision-instruct` | Image/video visual understanding |
+
+### AWS Ingress — ALB
+
+```yaml
+# k8s/05-ingress/alb-ingress.yaml
+annotations:
+  kubernetes.io/ingress.class: alb
+  alb.ingress.kubernetes.io/scheme: internet-facing
+  alb.ingress.kubernetes.io/target-type: ip
+rules:
+  - /api  → api-service:80
+  - /     → frontend-service:80
+# Recommended: add ACM certificate ARN for HTTPS
+```
+
+### Image Registry — ECR
+
+All production Docker images follow the naming convention:
+```
+omarabdelhamidaly/openq-api:latest
+omarabdelhamidaly/openq-governance:latest
+omarabdelhamidaly/openq-worker-sql:latest
+omarabdelhamidaly/openq-worker-csv:latest
+omarabdelhamidaly/openq-worker-json:latest
+omarabdelhamidaly/openq-worker-pdf:latest
+omarabdelhamidaly/openq-worker-code:latest
+omarabdelhamidaly/openq-worker-nexus:latest
+omarabdelhamidaly/openq-worker-audio:latest
+omarabdelhamidaly/openq-worker-image:latest
+omarabdelhamidaly/openq-worker-video:latest
+omarabdelhamidaly/openq-exporter:latest
+omarabdelhamidaly/openq-frontend:latest
+```
+
+### Terraform — AWS Infrastructure Provisioning
+
+```bash
+cd terraform
+terraform init
+terraform plan -out=tfplan
+terraform apply tfplan
+aws eks update-kubeconfig --region us-east-1 --name openq-eks-cluster
+```
+
+| Module | AWS Resource | Configuration |
+|---|---|---|
+| `vpc` | VPC + Subnets + NAT Gateway | CIDR `10.0.0.0/16`, public + private subnets |
+| `eks` | EKS Cluster + Node Group | `openq-eks-cluster`, `t3.large` worker nodes, `us-east-1` |
+| `database` | Aurora Serverless v2 (PostgreSQL) | 0.5–2.0 ACUs — auto-scales to zero when idle |
+| `cache` | ElastiCache Redis | Managed Redis for Celery broker + HITL state checkpoints |
+| `ecr` | Elastic Container Registry | Stores all `omarabdelhamidaly/openq-*` images |
+| `iam-cicd` | IAM Role + Policy | Least-privilege role for CI/CD pipeline (GitHub Actions) |
+
+**Terraform outputs:**
+```
+vpc_id                 → VPC resource ID
+eks_cluster_endpoint   → Kubernetes API server endpoint
+aurora_db_endpoint     → PostgreSQL host (replaces DATABASE_URL)
+redis_primary_endpoint → ElastiCache host (replaces REDIS_URL)
+kubeconfig_command     → aws eks update-kubeconfig --region us-east-1 --name openq-eks-cluster
+```
+
+> **Production migration path:** replace `DATABASE_URL` in `02-config.yaml` with `aurora_db_endpoint`, and `REDIS_URL` with `redis_primary_endpoint` from Terraform outputs. Credentials should be moved to AWS Secrets Manager or HashiCorp Vault.
 
 ---
 
-## 10. Observability Stack
+## 11. Observability Stack
 
 ### Prometheus
 
-Scrapes metrics from API Gateway at `/metrics`:
+Scrapes metrics from the API Gateway at `/metrics` (port `8000` internal, mapped to `8002` externally):
 
+```yaml
+# prometheus/prometheus.yml
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  - job_name: 'analyst-api'
+    static_configs:
+      - targets: ['api:8000']
+    metrics_path: '/metrics'
+
+  - job_name: 'redis'
+    static_configs:
+      - targets: ['redis-exporter:9121']   # via redis_exporter sidecar
+
+  # Optional: Celery Flower real-time task monitor
+  # - job_name: 'flower'
+  #   static_configs:
+  #     - targets: ['flower:5555']
 ```
-OpenQ_api_requests_total{method, endpoint, status_code}
-OpenQ_api_request_duration_seconds{method, endpoint}
-OpenQ_jobs_total{status, intent, source_type}
-OpenQ_jobs_duration_seconds{pipeline, node}
-OpenQ_queue_depth{queue_name}
+
+**Key metric names:**
+```
+insightify_api_requests_total{method, endpoint, status_code}
+insightify_api_request_duration_seconds{method, endpoint}
+insightify_jobs_total{status, intent, source_type}
+insightify_jobs_duration_seconds{pipeline, node}
+insightify_queue_depth{queue_name}
 ```
 
 ### Grafana
 
-Pre-provisioned dashboards (no manual setup):
+Pre-provisioned dashboards (no manual setup — auto-loaded via `grafana/provisioning/`):
 
 | Dashboard | Key Panels |
 |---|---|
 | **Platform Overview** | Active jobs, error rate, p50/p95/p99 latency, queue depths |
-| **Pipeline Performance** | Per-node latency breakdown across all 4 worker pipelines |
+| **Pipeline Performance** | Per-node latency breakdown across all worker pipelines |
 | **Tenant Analytics** | Jobs per tenant, data source distribution, intent breakdown |
 | **Security** | Rate limit hits, auth failures, JWT revocations |
 
@@ -762,11 +962,11 @@ Access: `http://localhost:3000` — admin/admin (change in production).
 
 ### Structured Logging
 
-All services emit JSON logs via `structlog` with automatic context variable binding (job_id bound at task start):
+All services emit JSON logs via `structlog` with automatic context variable binding:
 
 ```json
 {
-  "timestamp": "2026-03-20T09:05:12.334Z",
+  "timestamp": "2026-04-15T09:05:12.334Z",
   "level": "info",
   "service": "worker-sql",
   "tenant_id": "7c9e6679-...",
@@ -779,11 +979,11 @@ All services emit JSON logs via `structlog` with automatic context variable bind
 
 ---
 
-## 11. Key Design Decisions
+## 12. Key Design Decisions
 
 ### Why Clean Architecture per service?
 
-Each microservice could be a simple script. Instead, we applied the Dependency Inversion Principle: `domain/` and `use_cases/` layers import nothing from `infrastructure/`. This means swapping Groq for Gemini, or switching from Redis to PostgreSQL as the LangGraph checkpointer, requires changes only in the outermost ring. Core agent logic (the expensive-to-test, expensive-to-reason-about part) is isolated from framework churn.
+Each microservice could be a simple script. Instead, we applied the Dependency Inversion Principle: `domain/` and `use_cases/` layers import nothing from `infrastructure/`. This means swapping Groq for Gemini, or switching from Redis to PostgreSQL as the LangGraph checkpointer, requires changes only in the outermost ring. Core agent logic — the expensive-to-test, expensive-to-reason-about part — is isolated from framework churn.
 
 ### Why Celery queues between layers instead of HTTP?
 
@@ -804,6 +1004,10 @@ A secrets manager is the right answer at scale. AES-256-GCM in the database is a
 ### Why Gemini 2.0 Flash for PDF synthesis?
 
 Traditional PDF RAG chunks text and embeds it — destroying visual layout, tables, and charts. Gemini 2.0 Flash is natively multimodal: PDF pages are rendered as JPEG images and sent directly to the model, which understands both layout and text simultaneously. For enterprise documents (financial reports, technical manuals), visual layout carries as much meaning as raw text. This approach requires no OCR pre-processing for clean PDFs and no separate embedding model for visual content.
+
+### Why Neo4j for the Knowledge Graph?
+
+Relational databases model entities well but express relationships poorly. The cross-pillar intelligence Nexus needs to find that a `Function` in the codebase `REPRESENTS_DATA` in a SQL `Table` that is `MENTIONED` in a PDF `Chunk` — a 3-hop traversal that would require 3 JOINs in SQL and is a single Cypher `MATCH` in Neo4j. Graph traversal queries run in milliseconds at any depth.
 
 ### Why a multi-provider LLM fallback chain?
 

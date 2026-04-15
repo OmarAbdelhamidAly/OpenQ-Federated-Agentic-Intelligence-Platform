@@ -1,0 +1,29 @@
+groups:
+  - name: OpenQAlerts
+    rules:
+      - alert: HighErrorRate
+        expr: rate(insightify_api_requests_total{status_code=~"5.."}[5m]) > 0.05
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "High API Error Rate (> 5%)"
+          description: "The API Gateway is experiencing a high rate of 5xx errors over the last 5 minutes."
+
+      - alert: HighLatency
+        expr: histogram_quantile(0.95, rate(insightify_api_request_duration_seconds_bucket[5m])) > 2.0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High API Latency"
+          description: "The 95th percentile API latency is over 2 seconds."
+
+      - alert: WorkerQueueBackup
+        expr: insightify_queue_depth > 100
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Worker Queue Backup"
+          description: "Queue depth is consistently above 100 on {{ $labels.queue_name }}, workers may be overloaded."

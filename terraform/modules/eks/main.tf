@@ -55,6 +55,13 @@ resource "aws_eks_cluster" "main" {
     subnet_ids = var.private_subnet_ids
   }
 
+  encryption_config {
+    resources = ["secrets"]
+    provider {
+      key_arn = var.kms_key_id
+    }
+  }
+
   enabled_cluster_log_types = ["api", "audit", "authenticator", "controllerManager", "scheduler"]
 
   depends_on = [aws_iam_role_policy_attachment.cluster_AmazonEKSClusterPolicy]
@@ -81,4 +88,19 @@ resource "aws_eks_node_group" "main" {
     aws_iam_role_policy_attachment.nodes_AmazonEKS_CNI_Policy,
     aws_iam_role_policy_attachment.nodes_AmazonEC2ContainerRegistryReadOnly,
   ]
+}
+
+# ── Kubernetes Namespaces ─────────────────────────────────────
+resource "kubernetes_namespace" "core" {
+  metadata {
+    name = "openq-core"
+  }
+  depends_on = [aws_eks_cluster.main, aws_eks_node_group.main]
+}
+
+resource "kubernetes_namespace" "workers" {
+  metadata {
+    name = "openq-workers"
+  }
+  depends_on = [aws_eks_cluster.main, aws_eks_node_group.main]
 }

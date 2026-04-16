@@ -35,12 +35,11 @@ async def data_discovery_agent(state: AnalysisState) -> Dict[str, Any]:
     )
     from app.modules.csv.utils.ingestion import ingest_csv_to_postgres
 
-    # Generate a unique table name for Superset
+    # Generate a unique table name for internal tracking
     source_id = str(state.get("source_id", "default"))
     table_name = f"csv_{source_id.replace('-', '_')}"
 
-    # Trigger ingestion to Postgres for Superset visualization
-    await ingest_csv_to_postgres(file_path, table_name, str(state.get("tenant_id", "default")))
+    # Mirroring to Postgres removed (Superset integration cleanup)
 
     total_cells = df.shape[0] * df.shape[1]
     null_cells = int(df.isnull().sum().sum())

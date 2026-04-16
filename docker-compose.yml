@@ -24,19 +24,6 @@ services:
       test: ["CMD-SHELL", "pg_isready -U postgres -d analyst_agent"]
       interval: 10s
 
-  postgres-init-extra-db:
-    image: postgres:16-alpine
-    container_name: analyst-postgres-init
-    restart: "no"
-    depends_on:
-      postgres: { condition: service_healthy }
-    networks: [backend-net]
-    environment:
-      PGPASSWORD: postgres
-    command: >
-      sh -c "
-      psql -h postgres -U postgres -tc \"SELECT 1 FROM pg_database WHERE datname = 'superset_meta'\" | grep -q 1 || psql -h postgres -U postgres -c \"CREATE DATABASE superset_meta\"
-      "
 
   # ── Redis (Message Broker & Cache) ──────────────────────────
   redis:
@@ -120,8 +107,7 @@ services:
       DATABASE_URL: postgresql+asyncpg://postgres:postgres@postgres:5432/analyst_agent
       REDIS_URL: redis://redis:6379/0
       OLLAMA_BASE_URL: http://ollama:11434
-      SUPERSET_URL: http://superset:8088
-      SUPERSET_PUBLIC_URL: http://localhost:8088
+
     volumes:
       - tenant_uploads:/tmp/tenants
       - ./services/api:/app
@@ -169,7 +155,7 @@ services:
       REDIS_URL: redis://redis:6379/0
       OLLAMA_BASE_URL: http://ollama:11434
       SQLITE_BASE_DIR: /tmp/tenants
-      SUPERSET_URL: http://superset:8088
+
     volumes:
       - tenant_uploads:/tmp/tenants
       - ./services/worker-sql:/app
@@ -191,7 +177,7 @@ services:
       DATABASE_URL: postgresql+asyncpg://postgres:postgres@postgres:5432/analyst_agent
       REDIS_URL: redis://redis:6379/0
       OLLAMA_BASE_URL: http://ollama:11434
-      SUPERSET_URL: http://superset:8088
+
     volumes:
       - tenant_uploads:/tmp/tenants
       - ./services/worker-csv:/app
@@ -214,7 +200,7 @@ services:
       REDIS_URL: redis://redis:6379/0
       OLLAMA_BASE_URL: http://ollama:11434
       MONGO_URI: mongodb://mongodb:27017
-      SUPERSET_URL: http://superset:8088
+
     volumes:
       - tenant_uploads:/tmp/tenants
       - ./services/worker-json:/app
@@ -420,6 +406,26 @@ services:
           memory: 1G
     depends_on: [redis]
 
+  # ── Layer 5: Corporate Environment Service ─────────────────
+  corporate:
+    build: { context: ./services/corporate, dockerfile: Dockerfile }
+    container_name: analyst-corporate
+    restart: unless-stopped
+    env_file: [.env]
+    environment:
+      DATABASE_URL: postgresql+asyncpg://postgres:postgres@postgres:5432/analyst_agent
+      REDIS_URL: redis://redis:6379/0
+    volumes:
+      - ./services/corporate:/app
+    networks: [backend-net]
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 1G
+    depends_on:
+      postgres: { condition: service_healthy }
+
   # ── Celery Monitoring (Flower) ──────────────────────────────
   flower:
     image: mher/flower:latest
@@ -470,44 +476,7 @@ services:
     depends_on:
       redis: { condition: service_healthy }
 
-  # ══════════════════════════════════════════════════════════════
-  #  Analytics (Apache Superset)
-  # ══════════════════════════════════════════════════════════════
-  superset:
-    build: { context: ./superset, dockerfile: Dockerfile }
-    container_name: analyst-superset
-    restart: unless-stopped
-    ports: ["8088:8088"]
-    environment:
-      SUPERSET_SECRET_KEY: analyst-superset-secret-change-in-prod
-      SUPERSET_DB_URI: postgresql+psycopg2://postgres:postgres@postgres:5432/superset_meta
-    volumes:
-      - supersetdata:/app/superset_home
-      - ./superset/superset_config.py:/app/pythonpath/superset_config.py:ro
-      - tenant_uploads:/tmp/tenants:ro
-    networks: [frontend-net, backend-net]
-    depends_on:
-      postgres: { condition: service_healthy }
-      postgres-init-extra-db: { condition: service_completed_successfully }
 
-  superset-init:
-    build: { context: ./superset, dockerfile: Dockerfile }
-    container_name: analyst-superset-init
-    restart: "no"
-    environment:
-      SUPERSET_DB_URI: postgresql+psycopg2://postgres:postgres@postgres:5432/superset_meta
-    volumes:
-      - ./superset/superset_config.py:/app/pythonpath/superset_config.py:ro
-    networks: [backend-net]
-    command: >
-      bash -c "
-        superset db upgrade &&
-        superset fab create-admin --username admin --firstname Admin --lastname User --email admin@analyst.ai --password admin || true &&
-        superset init
-      "
-    depends_on:
-      postgres: { condition: service_healthy }
-      postgres-init-extra-db: { condition: service_completed_successfully }
 
   # ── Adminer (Database Web UI) ────────────────────────────────
   adminer:
@@ -544,6 +513,6 @@ volumes:
   hf_cache:
   prometheusdata:
   grafanadata:
-  supersetdata:
+
   mongodata:
   codebase_chunks_volume:

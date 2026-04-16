@@ -37,6 +37,12 @@ variable "db_instance_class" {
   }
 }
 
+variable "domain_name" {
+  description = "Domain name for Route 53 and ALB (e.g., openq.ai)"
+  type        = string
+  default     = "openq.ai"
+}
+
 variable "tags" {
   description = "Common tags for resources"
   type        = map(string)

@@ -274,7 +274,7 @@ export default function MessageBubble({ message, onApproveSuccess }: Props) {
                   </div>
                 )}
 
-                {/* Chart / Superset Dashboard */}
+                {/* Dynamic Chart Visualization */}
                 {message.job.chart_json && (
                   <div className="w-full rounded-2xl overflow-hidden border border-slate-700/50 shadow-xl">
                     <div className="px-4 py-2.5 bg-slate-900/60 border-b border-slate-800 flex items-center gap-2">

@@ -62,7 +62,7 @@ class AnalysisState(TypedDict, total=False):
     # ── Visualization Agent Output ────────────────────────────
     chart_json: Annotated[Optional[Dict[str, Any]], merge_dicts]  
     viz_rationale: Optional[str]
-    chart_engine: Optional[str]  # "plotly" | "superset"
+    chart_engine: Optional[str]  # "plotly"
 
     # ── Insight Agent Output ──────────────────────────────────
     insight_report: Optional[str]

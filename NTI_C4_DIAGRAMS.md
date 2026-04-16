@@ -197,8 +197,6 @@ graph TB
             Metrics scraping"]
             Graf["Grafana :3000
             Pre-provisioned dashboards"]
-            Superset["Apache Superset :8088
-            Embedded analytics companion"]
         end
     end
 
@@ -319,10 +317,6 @@ graph LR
 
             VoiR["voice.py
             voice-to-text query submission"]
-
-            SupR["superset.py
-            embedded analytics proxy
-            + guest token issuance"]
         end
 
         subgraph Infra ["Infrastructure (Clean Arch: outermost ring)"]

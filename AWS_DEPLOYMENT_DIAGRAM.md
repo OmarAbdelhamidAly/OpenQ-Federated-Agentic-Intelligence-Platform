@@ -1,6 +1,6 @@
 # ☁️ AWS Deployment Architecture
 
-This diagram visualizes the infrastructure provisioned by our Terraform modules and the Kubernetes workloads deployed via our manifests.
+This diagram visualizes the infrastructure provisioned by our Terraform modules and the Kubernetes workloads deployed via our manifests, synchronized for the 22-service federated intelligence stack.
 
 ```mermaid
 flowchart TD
@@ -11,6 +11,7 @@ flowchart TD
     classDef eks fill:#3498DB,stroke:#2980B9,stroke-width:2px,color:white;
     classDef pod fill:#E8F8F5,stroke:#1ABC9C,stroke-width:1px;
     classDef data fill:#9B59B6,stroke:#8E44AD,stroke-width:2px,color:white;
+    classDef obs fill:#34495E,stroke:#2C3E50,stroke-width:1px,color:white;
 
     %% Client entry
     Client([Internet / Client]) --> Route53
@@ -37,29 +38,36 @@ flowchart TD
                     
                     subgraph NS_Core ["Namespace: openq-core"]
                         API[API Gateway Pods + HPA]:::pod
+                        Corp[Corporate Environment Service]:::pod
                         FE[Frontend SPA Pods]:::pod
                         Gov[Governance & Exporter Pods]:::pod
                     end
                     
                     subgraph NS_Workers ["Namespace: openq-workers"]
-                        Workers[Pillar Celery Workers + HPA\n(SQL, CSV, PDF, Nexus, Audio, Image)]:::pod
+                        Workers[Pillar Celery Workers + HPA\n(SQL, CSV, JSON, PDF, Nexus, Audio, Image, Video)]:::pod
                     end
                 end
                 
-                subgraph DataLayer ["💾 Persistent Data Layer"]
+                subgraph DataLayer ["💾 Multi-Engine Persistence Layer"]
                     direction LR
-                    Aurora[(Aurora Serverless v2 PostgreSQL\n0.5 - 2.0 ACU)]:::data
-                    Redis[(ElastiCache Redis cluster\nMulti-AZ)]:::data
+                    Aurora[(Aurora Serverless v2 PostgreSQL)]:::data
+                    Redis[(ElastiCache Redis cluster)]:::data
+                    Neo4j[(Neo4j Knowledge Graph)]:::data
+                    Qdrant[(Qdrant Vector DB)]:::data
+                    Mongo[(MongoDB Document Store)]:::data
                 end
             end
         end
         
-        subgraph Mgt ["🛠️ Management, Security & CI/CD"]
+        subgraph Mgt ["🛠️ Management, Security & Observability"]
             ECR[Amazon ECR\n(Docker Images)]:::aws
-            SecretsManager[AWS Secrets Manager\n(DB Passwords)]:::aws
-            KMS[AWS KMS\n(Encryption Keys)]:::aws
+            KMS[AWS KMS\n(Central Encryption)]:::aws
             S3[(Terraform State S3)]:::aws
-            Dynamo[(Terraform Locks DB)]:::aws
+            
+            subgraph Obs ["📊 Observability Stack"]
+                Prom[Prometheus]:::obs
+                Graf[Grafana]:::obs
+            end
         end
     end
 
@@ -71,25 +79,31 @@ flowchart TD
     API -->|Deploy Tasks| Workers
     API -->|Read/Write| Aurora
     API -->|State/Cache| Redis
+    Corp -->|Org Hierarchy| Aurora
     
-    Workers -->|Read/Write| Aurora
-    Workers -->|Checkpoints| Redis
+    Workers -->|Relational| Aurora
+    Workers -->|State/HITL| Redis
+    Workers -->|Graph Entities| Neo4j
+    Workers -->|Vector RAG| Qdrant
+    Workers -->|Doc Metadata| Mongo
+    
     Gov -->|Manage Tasks| Workers
     
     %% Security & Management Links
-    API -.->|Fetch Credentials| SecretsManager
     EKS -.->|Pull Images| ECR
-    
-    %% Encryption representations
-    Aurora -.->|Encrypted At-Rest| KMS
-    Redis -.->|Encrypted At-Rest| KMS
     EKS -.->|Control Plane Secrets| KMS
+    DataLayer -.->|Encrypted At-Rest| KMS
 
 ```
 
 ## Infrastructure Highlights
 
-1. **High Availability**: The VPC spans multiple Data Centers (Availability Zones). The DB, Redis, and EKS nodes automatically distribute across them.
-2. **Security**: All persistent data layers sit inside Private Subnets, unreachable by the public internet. Access is strictly via the Application Load Balancer.
-3. **KMS Encryption**: Storage devices, database volumes, cache data, and Kubernetes secrets are secured at rest using AWS KMS.
-4. **Terraform Collaboration**: Provisioning uses an isolated S3 bucket for tracking state files, secured from conflicts using DynamoDB state locking.
+1. **High Availability**: The VPC spans multiple Availability Zones. The Data Layer (Aurora, Redis, Neo4j) and EKS nodes automatically distribute across them for maximum resilience.
+2. **Security**: All persistent data stores sit inside Private Subnets. Access is strictly via the Application Load Balancer and internal Kubernetes routing.
+3. **KMS Centralized Encryption**: All storage devices, database volumes, cache data, and Kubernetes control-plane secrets are secured at-rest using a Customer Managed Key (CMK) in AWS KMS.
+4. **Multi-Engine Intelligence**:
+    - **PostgreSQL**: Metadata, users, and relational business data.
+    - **Neo4j**: Codebase AST, entity relationships, and cross-pillar strategic forge.
+    - **Qdrant**: High-dimensional vector embeddings for PDF RAG and JSON semantic search.
+    - **MongoDB**: Unstructured metadata and analysis aggregation pipelines.
+5. **Observability Stack**: Integrated Prometheus and Grafana for real-time monitoring of job latencies, queue depths, and cluster health.

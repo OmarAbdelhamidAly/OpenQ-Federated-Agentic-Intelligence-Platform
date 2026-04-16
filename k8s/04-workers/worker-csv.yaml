@@ -23,8 +23,6 @@ spec:
         - secretRef:
             name: openq-secrets
         env:
-        - name: SUPERSET_URL
-          value: "http://superset-service:8088"
         resources:
           limits:
             cpu: "1500m"

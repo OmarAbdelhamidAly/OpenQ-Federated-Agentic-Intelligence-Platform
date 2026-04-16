@@ -13,7 +13,7 @@ from fastapi.staticfiles import StaticFiles
 
 from app.infrastructure.config import settings
 from app.infrastructure.middleware import setup_middleware
-from app.routers import auth, users, data_sources, analysis, reports, groups, metrics, knowledge, policies, superset, voice, codebase
+from app.routers import auth, users, data_sources, analysis, reports, groups, metrics, knowledge, policies, voice, codebase
 from prometheus_fastapi_instrumentator import Instrumentator
 
 logger = structlog.get_logger(__name__)
@@ -167,7 +167,7 @@ def create_app() -> FastAPI:
     app.include_router(metrics.router)
     app.include_router(knowledge.router)
     app.include_router(policies.router)
-    app.include_router(superset.router)
+
     app.include_router(voice.router)
     app.include_router(codebase.router)
 

@@ -56,6 +56,7 @@ resource "aws_rds_cluster" "main" {
   vpc_security_group_ids  = [aws_security_group.db.id]
   skip_final_snapshot     = true
   storage_encrypted       = true
+  kms_key_id              = var.kms_key_id
 
   serverlessv2_scaling_configuration {
     max_capacity = var.db_instance_class.max

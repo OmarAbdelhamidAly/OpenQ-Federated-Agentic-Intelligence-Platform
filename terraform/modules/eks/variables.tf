@@ -21,3 +21,8 @@ variable "node_instance_type" {
 variable "tags" {
   type = map(string)
 }
+
+variable "kms_key_id" {
+  description = "KMS Key ARN for EKS secret encryption"
+  type        = string
+}

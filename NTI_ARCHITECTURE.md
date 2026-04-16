@@ -132,10 +132,10 @@ services/{service}/app/
 │  │ Metadata DB │  │ RAG      │  │ KG Graph │  │ JSON Docs│  │ ./tenant │  │
 │  └─────────────┘  └──────────┘  └──────────┘  └──────────┘  └──────────┘  │
 │                                                                             │
-│  ┌──────────────┐  ┌──────────────┐  ┌─────────────────────────────────┐   │
-│  │  Prometheus  │  │   Grafana    │  │   Apache Superset :8088         │   │
-│  │  :9090       │  │   :3000      │  │   Embedded analytics            │   │
-│  └──────────────┘  └──────────────┘  └─────────────────────────────────┘   │
+│  ┌──────────────┐  ┌──────────────┐
+│  │  Prometheus  │  │   Grafana    │
+│  │  :9090       │  │   :3000      │
+│  └──────────────┘  └──────────────┘
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -160,7 +160,6 @@ The only public-facing service. Handles HTTP, auth, file storage, and Celery dis
 | `/reports/*` | Async export dispatch + signed download URLs |
 | `/groups/*` | Team group management for multi-user tenants |
 | `/voice/*` | Voice-to-text query submission (audio → transcription → analysis queue) |
-| `/superset/*` | Apache Superset embedded analytics proxy with guest token |
 | `/health` | Deep health check (PostgreSQL + Redis + Celery workers) |
 
 **Key infrastructure modules:**

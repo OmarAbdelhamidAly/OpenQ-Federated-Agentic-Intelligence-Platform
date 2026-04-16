@@ -23,12 +23,11 @@ Protected endpoints require `Authorization: Bearer {access_token}`.
 8. [Metrics](#8-metrics)
 9. [Groups](#9-groups)
 10. [Voice](#10-voice)
-11. [Superset](#11-superset)
-12. [Health](#12-health)
-13. [Error Responses](#13-error-responses)
-14. [Role-Based Access](#14-role-based-access)
-15. [Rate Limits Reference](#15-rate-limits-reference)
-16. [Pipeline Routing Reference](#16-pipeline-routing-reference)
+11. [Health](#11-health)
+12. [Error Responses](#12-error-responses)
+13. [Role-Based Access](#13-role-based-access)
+14. [Rate Limits Reference](#14-rate-limits-reference)
+15. [Pipeline Routing Reference](#15-pipeline-routing-reference)
 
 ---
 
@@ -742,26 +741,8 @@ The job proceeds identically to `POST /analysis/query` after transcription. Use 
 
 ---
 
-## 11. Superset
 
-Embeds Apache Superset as an analytics companion for advanced dashboarding alongside Insightify's agentic analysis.
-
-### GET /superset/embed
-
-**Protected.** Returns an embedded Superset dashboard URL with a pre-authenticated guest session token.
-
-**Response `200`:**
-```json
-{
-  "embed_url": "http://superset:8088/superset/dashboard/1/?standalone=3",
-  "token": "superset-guest-token",
-  "expires_at": "2026-04-15T10:00:00Z"
-}
-```
-
----
-
-## 12. Health
+## 11. Health
 
 ### GET /health
 
@@ -793,7 +774,7 @@ No authentication required. Returns deep health — verifies PostgreSQL, Redis, 
 
 ---
 
-## 13. Error Responses
+## 12. Error Responses
 
 All errors follow a consistent envelope:
 
@@ -819,7 +800,7 @@ All errors follow a consistent envelope:
 
 ---
 
-## 14. Role-Based Access
+## 13. Role-Based Access
 
 | Endpoint Group | `admin` | `viewer` |
 |---|---|---|
@@ -853,12 +834,11 @@ All errors follow a consistent envelope:
 | POST /groups/{id}/assign | ✅ | ❌ |
 | DELETE /groups/{id} | ✅ | ❌ |
 | POST /voice/query | ✅ | ✅ |
-| GET /superset/embed | ✅ | ✅ |
 | GET /health | ✅ | ✅ |
 
 ---
 
-## 15. Rate Limits Reference
+## 14. Rate Limits Reference
 
 | Endpoint | Limit | Enforcement |
 |---|---|---|
@@ -879,7 +859,7 @@ When exceeded, returns `429 Too Many Requests` with a `Retry-After` header.
 
 ---
 
-## 16. Pipeline Routing Reference
+## 15. Pipeline Routing Reference
 
 The governance worker automatically routes each job to the correct pillar worker based on `data_source.type`. This table summarizes the full routing logic:
 

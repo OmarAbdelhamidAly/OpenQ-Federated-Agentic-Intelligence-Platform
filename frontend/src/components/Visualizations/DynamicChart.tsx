@@ -1,7 +1,6 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
 import { AlertCircle, Maximize2, ExternalLink, Loader2, TrendingUp } from 'lucide-react';
 import { AnalysisAPI } from '../../services/api';
-import { embedDashboard } from '@superset-ui/embedded-sdk';
 import Plotly from 'plotly.js-dist-min';
 import createPlotlyComponent from 'react-plotly.js/factory';
 const Plot = createPlotlyComponent(Plotly);
@@ -13,53 +12,14 @@ interface DynamicChartProps {
 export default function DynamicChart({ config }: DynamicChartProps) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [supersetData, setSupersetData] = useState<{ token: string, url: string } | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
-  const isSuperset = config?.embedded_id || config?.internal_uuid;
+  const isSuperset = false; // Superset integration removed
   const isPlotly = config?.data && config?.layout; 
 
   useEffect(() => {
-    if (!isSuperset) {
-      setLoading(false);
-      return;
-    }
-
-    let isMounted = true;
-    const mountDashboard = async () => {
-      try {
-        const { guest_token, superset_url } = await AnalysisAPI.getSupersetToken(config.internal_uuid);
-        if (!isMounted) return;
-        setSupersetData({ token: guest_token, url: superset_url });
-        
-        if (containerRef.current) {
-          containerRef.current.innerHTML = "";
-          await embedDashboard({
-            id: config.embedded_id,
-            supersetDomain: superset_url,
-            mountPoint: containerRef.current,
-            fetchGuestToken: () => Promise.resolve(guest_token),
-            dashboardUiConfig: { 
-              hideTitle: true, 
-              hideChartControls: true, 
-              hideTab: true,
-              hideNav: true 
-            } as any
-          });
-        }
-        if (isMounted) setLoading(false);
-      } catch (err) {
-        console.error("[CHART] Superset embed error:", err);
-        if (isMounted) {
-          setError("Secured access to Superset failed.");
-          setLoading(false);
-        }
-      }
-    };
-
-    mountDashboard();
-    return () => { isMounted = false; };
-  }, [config, isSuperset]);
+    setLoading(false);
+  }, [config]);
 
   const plotlyLayout = useMemo(() => {
     if (!isPlotly) return null;
@@ -118,36 +78,6 @@ export default function DynamicChart({ config }: DynamicChartProps) {
     );
   }
 
-  if (isSuperset && supersetData) {
-    return (
-        <div className="w-full h-[500px] my-8 rounded-3xl bg-[#0f172a] border border-slate-700/50 shadow-2xl relative overflow-hidden group">
-        <div className="absolute top-4 left-6 flex items-center gap-3 z-10 pointer-events-none">
-           <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 shadow-[0_0_8px_#10b981]" />
-           <span className="text-[9px] uppercase tracking-widest text-slate-500 font-bold bg-slate-900/80 px-2 py-1 rounded backdrop-blur-md">Live Superset Intelligence</span>
-        </div>
-
-        <div className="absolute top-4 right-6 flex items-center gap-2 z-10 opacity-0 group-hover:opacity-100 transition-opacity">
-          <a 
-            href={`${supersetData.url}/superset/dashboard/${config.native_id}/?standalone=true`} 
-            target="_blank" 
-            rel="noreferrer"
-            className="p-1.5 bg-slate-800/80 hover:bg-slate-700 rounded-lg text-slate-400 hover:text-white transition-all backdrop-blur-md border border-slate-700/50"
-            title="Open in Superset"
-          >
-            <ExternalLink className="w-3.5 h-3.5" />
-          </a>
-          <button className="p-1.5 bg-slate-800/80 hover:bg-slate-700 rounded-lg text-slate-400 hover:text-white transition-all backdrop-blur-md border border-slate-700/50">
-            <Maximize2 className="w-3.5 h-3.5" />
-          </button>
-        </div>
-
-        <div 
-          ref={containerRef} 
-          className="w-full h-full [&_iframe]:w-full [&_iframe]:h-full [&_iframe]:border-none [&_iframe]:rounded-2xl" 
-        />
-      </div>
-    );
-  }
 
   return (
     <div className="p-16 border border-slate-800/60 rounded-[2.5rem] bg-slate-950/20 text-center backdrop-blur-sm relative overflow-hidden">

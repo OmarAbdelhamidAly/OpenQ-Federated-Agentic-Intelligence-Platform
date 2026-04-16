@@ -1,6 +1,6 @@
 <div align="center">
 
-# 🤖 Insightify
+# 🤖 OpenQ
 
 **Autonomous Multi-Pillar Enterprise Data Intelligence — Multi-Tenant SaaS Platform**
 
@@ -10,7 +10,7 @@
 [![Celery](https://img.shields.io/badge/Celery-5.4-37814A?logo=celery&logoColor=white)](https://docs.celeryq.dev)
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-4169E1?logo=postgresql&logoColor=white)](https://postgresql.org)
 [![Redis](https://img.shields.io/badge/Redis-Broker%20%2B%20HITL%20Checkpoint-DC382D?logo=redis&logoColor=white)](https://redis.io)
-[![Docker](https://img.shields.io/badge/Docker-22%20Containers-2496ED?logo=docker&logoColor=white)](https://docker.com)
+[![Docker](https://img.shields.io/badge/Docker-25%20Containers-2496ED?logo=docker&logoColor=white)](https://docker.com)
 [![Gemini](https://img.shields.io/badge/Gemini-2.0--Flash%20Vision-4285F4?logo=google-gemini&logoColor=white)](https://deepmind.google/technologies/gemini/)
 [![Neo4j](https://img.shields.io/badge/Neo4j-Knowledge%20Graph-018BFF?logo=neo4j&logoColor=white)](https://neo4j.com)
 [![Qdrant](https://img.shields.io/badge/Qdrant-Vector%20RAG-4F46E5)](https://qdrant.tech)
@@ -31,7 +31,7 @@
 
 ## 🎯 What It Does
 
-**Insightify** is a production-grade, multi-tenant SaaS platform that transforms raw enterprise data into executive-quality insights through a fully autonomous, multi-pillar AI pipeline.
+**OpenQ** is a production-grade, multi-tenant SaaS platform that transforms raw enterprise data into executive-quality insights through a fully autonomous, multi-pillar AI pipeline.
 
 A user connects a data source, types a natural-language question, and the system handles everything — schema discovery, query generation, self-healing on failure, visualization, insight synthesis, and export — with **zero manual intervention**.
 
@@ -47,6 +47,7 @@ A user connects a data source, types a natural-language question, and the system
 | **Audio** | `worker-audio` | File upload (WAV/MP3/M4A) | Transcription + entity extraction via Gemini 1.5 Flash |
 | **Image** | `worker-image` | File upload | Visual analysis via Gemini multimodal |
 | **Video** | `worker-video` | File upload | Scene & entity extraction via Gemini multimodal |
+| **Company Tree** | `corporate` | Hierarchy / Org Mapping | 20-level Materialized Path Org-Tree Management |
 | **Multi-pillar** | `worker-nexus` | Any combination above | Federated cross-domain strategic intelligence |
 
 ---
@@ -67,13 +68,13 @@ A user connects a data source, types a natural-language question, and the system
 | 📊 **Reasoning Transparency** | Every LangGraph node output captured in `thinking_steps` JSON and surfaced in the UI — full agent cognition audit trail per job |
 | 🔄 **Multi-Provider LLM Resilience** | `OpenRouter (Gemini 2.0 Flash-001) → Groq (Llama-3.3-70B) → Gemini Direct` fallback chain. LLM provider outages are transparent to all agents |
 | 🎙️ **Voice Queries** | Natural-language questions submitted as audio — transcribed server-side and routed through the standard analysis pipeline |
-| 📡 **Apache Superset Integration** | Embedded analytics dashboards alongside agentic AI analysis, with pre-authenticated guest token proxy |
+| 🎙️ **Voice Queries** | Natural-language questions submitted as audio — transcribed server-side and routed through the standard analysis pipeline |
 
 ---
 
 ## 🏗️ System Architecture
 
-The platform is a **4-layer microservices stack** with **22 containers**, orchestrated by Docker Compose (Kubernetes-ready for production):
+The platform is a **5-layer microservices stack** with **25 containers**, orchestrated by Docker Compose (Kubernetes-ready for production):
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
@@ -114,9 +115,13 @@ The platform is a **4-layer microservices stack** with **22 containers**, orches
 │  Neo4j cross-pillar forge → context gather → 5-pillar synthesis         │
 └──────────────────────────────────────────────────────────────────────────┘
                                    │
-┌──────────────────────────────────▼──────────────────────────────────────┐
 │  LAYER 4 — EXPORTER  (services/exporter · Celery worker)               │
 │  PDF / XLSX / JSON export · Async generation · Tenant-scoped storage   │
+└──────────────────────────────────┬──────────────────────────────────────┘
+                                   │
+┌──────────────────────────────────▼──────────────────────────────────────┐
+│  LAYER 5 — CORPORATE  (services/corporate · FastAPI · :8009)           │
+│  Organizational Hierarchies (20 levels) · Task Governance · Submission  │
 └─────────────────────────────────────────────────────────────────────────┘
 
 SHARED INFRASTRUCTURE
@@ -137,15 +142,16 @@ MongoDB           — Document store for JSON pillar aggregation pipelines
 ## 📂 Repository Structure
 
 ```
-insightify/
+OpenQ/
 │
 ├── 📁 services/
 │   ├── api/                      # Layer 1: Public API Gateway
+│   ├── corporate/                # Layer 5: Org-Tree & Task Governance
 │   │   └── app/
 │   │       ├── main.py           # FastAPI app factory + self-healing DB migration
 │   │       ├── routers/          # auth · users · data_sources · analysis
 │   │       │                     # knowledge · policies · metrics · reports
-│   │       │                     # groups · voice · superset
+│   │       │                     # groups · voice
 │   │       ├── models/           # SQLAlchemy ORM: tenant · user · data_source
 │   │       │                     # analysis_job · analysis_result · knowledge · policy
 │   │       ├── schemas/          # Pydantic request/response schemas
@@ -230,8 +236,8 @@ insightify/
 │   ├── pvc.yaml · configmap.yaml · secrets.yaml
 │
 ├── 📁 terraform/                 # Infrastructure-as-Code — AWS (EKS + Aurora + ElastiCache + ECR)
-│   ├── main.tf                   # 6 modules: vpc · eks · database · cache · ecr · iam-cicd
-│   ├── variables.tf              # Region, cluster name, instance types, CIDR
+│   ├── main.tf                   # KMS · Route 53 · ALB · 6 Modules
+│   ├── variables.tf              # Region, domain_name, cluster specs
 │   ├── outputs.tf                # VPC ID, EKS endpoint, Aurora + Redis endpoints
 │   └── modules/
 │       ├── vpc/                  # VPC, public/private subnets, NAT gateway
@@ -241,7 +247,6 @@ insightify/
 │       ├── ecr/                  # Elastic Container Registry (image storage)
 │       └── iam-cicd/             # IAM role + policy for CI/CD pipeline
 │
-├── 📁 superset/                  # Apache Superset companion analytics
 ├── docker-compose.yml            # 22-service local stack
 ├── .env.example                  # All required environment variables documented
 ├── NTI_API_DOCUMENTATION.md      # Full REST API reference
@@ -253,7 +258,7 @@ insightify/
 
 ## 🔧 Services Deep-Dive
 
-### Layer 1 — API Gateway (`services/api`)
+### Layer 1 — API Gateway ([services/api](services/api/README.md))
 
 The single public entry point. Validates, persists, and dispatches — never executes analysis directly.
 
@@ -268,7 +273,6 @@ The single public entry point. Validates, persists, and dispatches — never exe
 | `routers/reports.py` | Export results as PDF/XLSX/JSON (dispatched to exporter worker) |
 | `routers/groups.py` | Team group management for multi-user tenants |
 | `routers/voice.py` | Voice-to-text query submission (audio → transcription → analysis pipeline) |
-| `routers/superset.py` | Apache Superset embedded analytics proxy with guest token |
 | `infrastructure/security.py` | JWT access (30 min) + refresh (7 days) tokens, bcrypt passwords |
 | `infrastructure/sql_guard.py` | 3-layer read-only enforcement: SELECT-only + regex + LLM semantic |
 | `infrastructure/middleware.py` | CORS, rate limiting (slowapi), security headers (CSP, X-Frame-Options, etc.) |
@@ -280,7 +284,7 @@ The single public entry point. Validates, persists, and dispatches — never exe
 
 ---
 
-### Layer 2 — Governance (`services/governance`)
+### Layer 2 — Governance ([services/governance](services/governance/README.md))
 
 Every analysis job passes through here first. No job reaches an execution pillar without governance approval.
 
@@ -301,19 +305,19 @@ Each is an independently scalable Docker container with its own `requirements.tx
 
 | Worker | Queue | Pipeline | Key Capabilities |
 |---|---|---|---|
-| `worker-sql` | `pillar.sql / .sqlite / .postgresql` | **12-node Cyclic StateGraph** | HITL approval, zero-row reflection, hybrid fusion, semantic cache, insight memory |
-| `worker-csv` | `pillar.csv` | **11-node Cyclic StateGraph** | Conditional data cleaning, guardrail, self-healing reflection, verifier |
-| `worker-json` | `pillar.json` | **10-node Directed Cyclic StateGraph** | MongoDB aggregation + Qdrant 768d RAG, semantic decomposition |
-| `worker-pdf` | `pillar.pdf` | **10-node Orchestrator StateGraph** | Gemini 2.0 Flash Vision, triple synthesis engines, anti-hallucination loop |
-| `worker-code` | `pillar.code` | **8-node Cyclic StateGraph** | Neo4j AST-mapped codebase, Cypher generation, episodic memory |
-| `worker-audio` | `pillar.audio` | Direct task (Gemini 1.5 Flash) | Transcript, speaker diarization, entity extraction, Neo4j sync |
-| `worker-image` | `pillar.image` | Direct task (Gemini multimodal) | Object/scene recognition, entity extraction, Neo4j sync |
-| `worker-video` | `pillar.video` | Direct task (Gemini multimodal) | Scene analysis, entity extraction, Neo4j sync |
-| `worker-nexus` | `pillar.nexus` | **6-node Federated Orchestrator** | Cross-pillar Neo4j forge → context gather → 5-pillar strategic synthesis |
+| [worker-sql](services/worker-sql/README.md) | `pillar.sql / .sqlite / .postgresql` | **12-node Cyclic StateGraph** | HITL approval, zero-row reflection, hybrid fusion, semantic cache, insight memory |
+| [worker-csv](services/worker-csv/README.md) | `pillar.csv` | **11-node Cyclic StateGraph** | Conditional data cleaning, guardrail, self-healing reflection, verifier |
+| [worker-json](services/worker-json/README.md) | `pillar.json` | **10-node Directed Cyclic StateGraph** | MongoDB aggregation + Qdrant 768d RAG, semantic decomposition |
+| [worker-pdf](services/worker-pdf/README.md) | `pillar.pdf` | **10-node Orchestrator StateGraph** | Gemini 2.0 Flash Vision, triple synthesis engines, anti-hallucination loop |
+| [worker-code](services/worker-code/README.md) | `pillar.code` | **8-node Cyclic StateGraph** | Neo4j AST-mapped codebase, Cypher generation, episodic memory |
+| [worker-audio](services/worker-audio/README.md) | `pillar.audio` | Direct task (Gemini 1.5 Flash) | Transcript, speaker diarization, entity extraction, Neo4j sync |
+| [worker-image](services/worker-image/README.md) | `pillar.image` | Direct task (Gemini multimodal) | Object/scene recognition, entity extraction, Neo4j sync |
+| [worker-video](services/worker-video/README.md) | `pillar.video` | Direct task (Gemini multimodal) | Scene analysis, entity extraction, Neo4j sync |
+| [worker-nexus](services/worker-nexus/README.md) | `pillar.nexus` | **6-node Federated Orchestrator** | Cross-pillar Neo4j forge → context gather → 5-pillar strategic synthesis |
 
 ---
 
-### Layer 4 — Exporter (`services/exporter`)
+### Layer 4 — Exporter ([services/exporter](services/exporter/README.md))
 
 Async export worker. Generates PDF/XLSX/JSON reports from completed results. Writes to tenant-scoped shared volume, serves via signed download URLs.
 
@@ -600,8 +604,8 @@ team_groups
 
 ```bash
 # 1. Clone and configure
-git clone https://github.com/OmarAbdelhamidAly/insightify.git
-cd insightify
+git clone https://github.com/OmarAbdelhamidAly/OpenQ.git
+cd OpenQ
 cp .env.example .env
 # Edit .env — minimum required: GROQ_API_KEY, OPENROUTER_API_KEY, SECRET_KEY, AES_KEY
 
@@ -626,17 +630,18 @@ curl http://localhost:8002/health
 | `analyst-worker-code` | — | Codebase analysis (8-node, Neo4j) |
 | `analyst-worker-audio` | — | Audio intelligence (Gemini 1.5 Flash) |
 | `analyst-worker-image` | — | Image analysis (Gemini multimodal) |
-| `analyst-worker-video` | — | Video analysis (Gemini multimodal) |
-| `analyst-worker-nexus` | — | Federated multi-pillar orchestrator |
+| `analyst-video` | — | Video analysis (Gemini) |
+| `analyst-corporate` | 8009 | Org-Tree & Task Governance |
 | `analyst-exporter` | — | Export service (PDF/XLSX/JSON) |
 | `analyst-postgres` | 5433 | Metadata database |
 | `analyst-redis` | 6379 | Broker + cache + HITL checkpoints |
 | `analyst-qdrant` | 6333 | Vector database |
 | `analyst-neo4j` | 7474/7687 | Knowledge graph |
 | `analyst-mongodb` | 27017 | JSON document store |
-| `analyst-superset` | 8088 | Embedded analytics |
-| `prometheus` | 9090 | Metrics collection |
-| `grafana` | 3000 | Monitoring dashboards |
+| `analyst-prometheus` | 9090 | Metrics collection |
+| `analyst-grafana` | 3000 | Monitoring dashboards |
+| `analyst-flower` | 5555 | Celery task monitoring |
+| `analyst-frontend` | 3001 | Standalone React/Vite UI |
 
 ### Kubernetes — Production (AWS EKS)
 
@@ -677,8 +682,8 @@ kubectl apply -f k8s/05-ingress/alb-ingress.yaml
 ### Quick Start
 
 ```bash
-git clone https://github.com/OmarAbdelhamidAly/insightify.git
-cd insightify
+git clone https://github.com/OmarAbdelhamidAly/OpenQ.git
+cd OpenQ
 cp .env.example .env
 ```
 
@@ -785,7 +790,6 @@ Each worker can use a different model, configured independently:
 | **Data Processing** | Pandas + NumPy | 2.2.3 / 1.26.4 |
 | **Visualization** | ECharts + Plotly.js | CDN |
 | **Frontend** | React + TypeScript + Vite (+ Vanilla JS SPA) | Latest |
-| **Companion Analytics** | Apache Superset (embedded) | Latest |
 | **Containerisation** | Docker Compose (22 services) + Kubernetes HPA | — |
 | **Observability** | Prometheus + Grafana (auto-provisioned) | Latest |
 | **Logging** | structlog (structured JSON) | Latest |

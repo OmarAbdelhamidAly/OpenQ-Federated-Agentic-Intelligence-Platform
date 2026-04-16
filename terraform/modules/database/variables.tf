@@ -17,3 +17,8 @@ variable "db_instance_class" {
 variable "tags" {
   type = map(string)
 }
+
+variable "kms_key_id" {
+  description = "KMS Key ARN for database encryption"
+  type        = string
+}

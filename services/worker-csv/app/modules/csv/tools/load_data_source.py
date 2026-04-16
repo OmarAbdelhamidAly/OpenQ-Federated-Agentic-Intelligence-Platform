@@ -109,11 +109,7 @@ def get_connection_string(state: Dict[str, Any]) -> Optional[str]:
     """
     source_type = get_source_type(state)
     
-    # Special Case: CSV or JSON mirrored to Postgres for Superset
-    if source_type in ("csv", "json") and state.get("table_name"):
-        from app.infrastructure.config import settings
-        # Use sync driver for Superset interaction
-        return settings.DATABASE_URL.replace("postgresql+asyncpg://", "postgresql://")
+    # Mirrored File (CSV/JSON) logic removed (Superset integration cleanup)
 
     config_encrypted = state.get("config_encrypted")
     file_path = state.get("file_path")

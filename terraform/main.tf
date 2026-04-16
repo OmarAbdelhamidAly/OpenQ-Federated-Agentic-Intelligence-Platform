@@ -27,6 +27,54 @@ resource "aws_kms_key" "main" {
   tags                    = var.tags
 }
 
+# ── Global DNS (Route 53) ────────────────────────────────────
+resource "aws_route53_zone" "main" {
+  name = var.domain_name
+  tags = var.tags
+}
+
+# ── Application Load Balancer (Public) ───────────────────────
+resource "aws_security_group" "alb" {
+  name        = "${var.project_name}-alb-sg"
+  description = "Public ALB Security Group"
+  vpc_id      = module.vpc.vpc_id
+
+  ingress {
+    from_port   = 80
+    to_port     = 80
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+}
+
+resource "aws_lb" "main" {
+  name               = "${var.project_name}-alb"
+  internal           = false
+  load_balancer_type = "application"
+  security_groups    = [aws_security_group.alb.id]
+  subnets            = module.vpc.public_subnet_ids
+
+  tags = var.tags
+}
+
+# ── Kubernetes Provider Configuration ────────────────────────
+provider "kubernetes" {
+  host                   = module.eks.endpoint
+  cluster_ca_certificate = base64decode(module.eks.kubeconfig-certificate-authority-data)
+  exec {
+    api_version = "client.authentication.k8s.io/v1beta1"
+    args        = ["eks", "get-token", "--cluster-name", module.eks.cluster_id]
+    command     = "aws"
+  }
+}
+
 # 1. Networking Layer
 module "vpc" {
   source       = "./modules/vpc"
@@ -44,6 +92,7 @@ module "eks" {
   vpc_id             = module.vpc.vpc_id
   private_subnet_ids = module.vpc.private_subnet_ids
   node_instance_type = var.node_instance_type
+  kms_key_id         = aws_kms_key.main.arn
   tags               = var.tags
 }
 
@@ -54,6 +103,7 @@ module "database" {
   vpc_id             = module.vpc.vpc_id
   private_subnet_ids = module.vpc.private_subnet_ids
   db_instance_class  = var.db_instance_class
+  kms_key_id         = aws_kms_key.main.arn
   tags               = var.tags
 }
 
@@ -63,6 +113,7 @@ module "cache" {
   project_name       = var.project_name
   vpc_id             = module.vpc.vpc_id
   private_subnet_ids = module.vpc.private_subnet_ids
+  kms_key_id         = aws_kms_key.main.arn
   tags               = var.tags
 }
 
@@ -78,4 +129,17 @@ module "iam_cicd" {
   source       = "./modules/iam-cicd"
   project_name = var.project_name
   tags         = var.tags
+}
+
+# ── Route 53 DNS Record (Alias to ALB) ───────────────────────
+resource "aws_route53_record" "www" {
+  zone_id = aws_route53_zone.main.zone_id
+  name    = var.domain_name
+  type    = "A"
+
+  alias {
+    name                   = aws_lb.main.dns_name
+    zone_id                = aws_lb.main.zone_id
+    evaluate_target_health = true
+  }
 }

@@ -1,4 +1,4 @@
-"""Data Discovery Agent for JSON — handles ingestion, stats, and Superset mirroring."""
+"""Data Discovery Agent for JSON — handles ingestion, stats, and metadata profiling."""
 
 import json
 import logging
@@ -11,7 +11,7 @@ from app.infrastructure.mongo_client import MongoDBClient
 logger = logging.getLogger(__name__)
 
 async def data_discovery_agent(state: AnalysisState) -> Dict[str, Any]:
-    """Ingest JSON into MongoDB, profile it, and mirror to Postgres for Superset."""
+    """Ingest JSON into MongoDB, profile it, and extract schema metadata."""
     file_path = state.get("file_path")
     source_id = str(state.get("source_id", "default"))
     
@@ -58,9 +58,7 @@ async def data_discovery_agent(state: AnalysisState) -> Dict[str, Any]:
         flattened_data = flatten_json(data_list)
         df_flattened = pd.DataFrame(flattened_data)
         
-        # 3. Mirror to Postgres for Superset
-        from app.modules.json.utils.ingestion import ingest_to_postgres
-        await ingest_to_postgres(df_flattened, table_name, str(state.get("tenant_id", "default")))
+        # 3. Profiling and Stats (Mirroring to Postgres removed)
 
         # 4. Extract schema and compute stats
         from app.modules.json.utils.statistics import (

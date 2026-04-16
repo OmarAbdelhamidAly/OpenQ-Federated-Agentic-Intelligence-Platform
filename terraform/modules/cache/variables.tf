@@ -13,3 +13,8 @@ variable "private_subnet_ids" {
 variable "tags" {
   type = map(string)
 }
+
+variable "kms_key_id" {
+  description = "KMS Key ARN for Redis encryption"
+  type        = string
+}

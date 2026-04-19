@@ -168,27 +168,7 @@ services:
           memory: 2G
     depends_on: [redis, postgres, ollama]
 
-  worker-csv:
-    build: { context: ./services/worker-csv, dockerfile: Dockerfile.worker }
-    container_name: analyst-worker-csv
-    restart: unless-stopped
-    env_file: [.env]
-    environment:
-      DATABASE_URL: postgresql+asyncpg://postgres:postgres@postgres:5432/analyst_agent
-      REDIS_URL: redis://redis:6379/0
-      OLLAMA_BASE_URL: http://ollama:11434
 
-    volumes:
-      - tenant_uploads:/tmp/tenants
-      - ./services/worker-csv:/app
-    networks: [backend-net]
-    command: ["celery", "-A", "app.worker", "worker", "-Q", "pillar.csv", "--loglevel=info", "--concurrency=4"]
-    deploy:
-      resources:
-        limits:
-          cpus: '1.5'
-          memory: 2G
-    depends_on: [redis, ollama]
 
   worker-json:
     build: { context: ./services/worker-json, dockerfile: Dockerfile.worker }
@@ -238,71 +218,7 @@ services:
           memory: 4G
     depends_on: [redis, postgres, ollama, neo4j]
 
-  worker-image:
-    build: { context: ./services/worker-image, dockerfile: Dockerfile.worker }
-    container_name: analyst-worker-image
-    restart: unless-stopped
-    env_file: [.env]
-    environment:
-      DATABASE_URL: postgresql+asyncpg://postgres:postgres@postgres:5432/analyst_agent
-      REDIS_URL: redis://redis:6379/0
-      NEO4J_URI: bolt://neo4j:7687
-      NEO4J_USERNAME: neo4j
-      NEO4J_PASSWORD: analyst_neo4j_password
-    volumes:
-      - tenant_uploads:/tmp/tenants
-      - ./services/worker-image:/app
-    networks: [backend-net]
-    deploy:
-      resources:
-        limits:
-          cpus: '0.5'
-          memory: 1G
-    depends_on: [redis, postgres, neo4j]
 
-  worker-audio:
-    build: { context: ./services/worker-audio, dockerfile: Dockerfile.worker }
-    container_name: analyst-worker-audio
-    restart: unless-stopped
-    env_file: [.env]
-    environment:
-      DATABASE_URL: postgresql+asyncpg://postgres:postgres@postgres:5432/analyst_agent
-      REDIS_URL: redis://redis:6379/0
-      NEO4J_URI: bolt://neo4j:7687
-      NEO4J_USERNAME: neo4j
-      NEO4J_PASSWORD: analyst_neo4j_password
-    volumes:
-      - tenant_uploads:/tmp/tenants
-      - ./services/worker-audio:/app
-    networks: [backend-net]
-    deploy:
-      resources:
-        limits:
-          cpus: '0.5'
-          memory: 1G
-    depends_on: [redis, postgres, neo4j]
-
-  worker-video:
-    build: { context: ./services/worker-video, dockerfile: Dockerfile.worker }
-    container_name: analyst-worker-video
-    restart: unless-stopped
-    env_file: [.env]
-    environment:
-      DATABASE_URL: postgresql+asyncpg://postgres:postgres@postgres:5432/analyst_agent
-      REDIS_URL: redis://redis:6379/0
-      NEO4J_URI: bolt://neo4j:7687
-      NEO4J_USERNAME: neo4j
-      NEO4J_PASSWORD: analyst_neo4j_password
-    volumes:
-      - tenant_uploads:/tmp/tenants
-      - ./services/worker-video:/app
-    networks: [backend-net]
-    deploy:
-      resources:
-        limits:
-          cpus: '1.0'
-          memory: 2G
-    depends_on: [redis, postgres, neo4j]
 
   mongodb:
     image: mongo:7

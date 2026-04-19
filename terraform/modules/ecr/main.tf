@@ -12,15 +12,11 @@ variable "service_names" {
     "api",
     "exporter",
     "governance",
-    "worker-audio",
     "worker-code",
-    "worker-csv",
-    "worker-image",
     "worker-json",
     "worker-nexus",
     "worker-pdf",
     "worker-sql",
-    "worker-video",
     "frontend"
   ]
 }

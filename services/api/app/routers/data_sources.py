@@ -248,14 +248,12 @@ async def upload_file(
         # Universal Documents
         *UNIVERSAL_DOCUMENT_EXTS,
         # Structured data
-        ".csv", ".xlsx", ".sqlite", ".db", ".sql", ".json", ".tsv",
+        ".csv", ".tsv", ".sqlite", ".db", ".sql", ".json",
         # Code
         ".zip", ".py", ".js", ".ts", ".env", ".java",
         ".cpp", ".h", ".go", ".sh", ".yaml", ".yml",
-        # Media
-        ".jpg", ".jpeg", ".png", ".webp",
-        ".mp3", ".wav", ".m4a", ".ogg",
-        ".mp4", ".mov", ".avi", ".mkv",
+        # Legacy Support
+        ".jpeg", ".jpg", ".png", ".webp"
     )
     if ext not in ALLOWED:
         raise HTTPException(
@@ -419,110 +417,7 @@ async def upload_file(
         celery_app.send_task("process_codebase_indexing", args=[str(source.id)], queue="pillar.code")
         return DataSourceResponse.model_validate(source)
 
-    # ── CSV / XLSX ──────────────────────────────────────────────────────
-    if ext in (".csv", ".xlsx"):
-        try:
-            df = pd.read_csv(file_path) if ext == ".csv" else pd.read_excel(file_path)
-            schema_json = _profile_dataframe(df)
-        except Exception as e:
-            logger.error("file_parsing_failed", error=str(e), file_path=file_path, ext=ext)
-            if os.path.exists(file_path):
-                os.remove(file_path)
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Failed to parse file: {e}",
-            )
 
-        source = DataSource(
-            id=uuid.uuid4(),
-            tenant_id=admin.tenant_id,
-            type="csv",
-            name=file.filename,
-            file_path=file_path,
-            context_hint=context_hint,
-            schema_json=schema_json,
-        )
-        db.add(source)
-        await db.commit()
-        await db.refresh(source)
-
-        logger.info(
-            "data_source_uploaded",
-            tenant_id=tenant_id_str,
-            user_id=str(admin.id),
-            source_id=str(source.id),
-            filename=file.filename,
-            rows=schema_json.get("row_count", 0),
-        )
-        from app.worker import celery_app
-        celery_app.send_task("process_source_discovery", args=[str(source.id), str(admin.id)], queue="pillar.csv")
-        return DataSourceResponse.model_validate(source)
-
-    # ── Image Document ──────────────────────────────────────────────────
-    if ext in (".jpg", ".jpeg", ".png", ".webp"):
-        schema_json: dict[str, Any] = {"source_type": "image"}
-        source = DataSource(
-            id=uuid.uuid4(),
-            tenant_id=admin.tenant_id,
-            type="image",
-            name=file.filename,
-            file_path=file_path,
-            context_hint=context_hint,
-            schema_json=schema_json,
-            indexing_status="running",
-        )
-        db.add(source)
-        await db.commit()
-        await db.refresh(source)
-
-        logger.info("image_source_uploaded", tenant_id=tenant_id_str, source_id=str(source.id), filename=file.filename)
-        from app.worker import celery_app
-        celery_app.send_task("process_source_discovery", args=[str(source.id), str(admin.id)], queue="pillar.image")
-        return DataSourceResponse.model_validate(source)
-
-    # ── Audio Document ──────────────────────────────────────────────────
-    if ext in (".mp3", ".wav", ".m4a", ".ogg"):
-        schema_json: dict[str, Any] = {"source_type": "audio"}
-        source = DataSource(
-            id=uuid.uuid4(),
-            tenant_id=admin.tenant_id,
-            type="audio",
-            name=file.filename,
-            file_path=file_path,
-            context_hint=context_hint,
-            schema_json=schema_json,
-            indexing_status="running",
-        )
-        db.add(source)
-        await db.commit()
-        await db.refresh(source)
-
-        logger.info("audio_source_uploaded", tenant_id=tenant_id_str, source_id=str(source.id), filename=file.filename)
-        from app.worker import celery_app
-        celery_app.send_task("process_source_discovery", args=[str(source.id), str(admin.id)], queue="pillar.audio")
-        return DataSourceResponse.model_validate(source)
-
-    # ── Video Document ──────────────────────────────────────────────────
-    if ext in (".mp4", ".mov", ".avi", ".mkv"):
-        schema_json: dict[str, Any] = {"source_type": "video"}
-        source = DataSource(
-            id=uuid.uuid4(),
-            tenant_id=admin.tenant_id,
-            type="video",
-            name=file.filename,
-            file_path=file_path,
-            context_hint=context_hint,
-            schema_json=schema_json,
-            indexing_status="running",
-        )
-        db.add(source)
-        await db.commit()
-        await db.refresh(source)
-
-        logger.info("video_source_uploaded", tenant_id=tenant_id_str, source_id=str(source.id), filename=file.filename)
-        from app.worker import celery_app
-        celery_app.send_task("process_source_discovery", args=[str(source.id), str(admin.id)], queue="pillar.video")
-        return DataSourceResponse.model_validate(source)
 
     # ── SQLite file (.sqlite / .db) ─────────────────────────────────────
     if ext in (".sqlite", ".db"):

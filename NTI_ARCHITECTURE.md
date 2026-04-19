@@ -483,18 +483,51 @@ route_after_execution
 
 ---
 
-### Audio / Image / Video Pipelines — Direct Task (Gemini Multimodal)
+### Audio Pipeline — 9 Nodes (Linear StateGraph, OpenRouter Multimodal)
 
-These three workers use a **direct Celery task** pattern rather than a LangGraph graph, because their primary job is discovery/indexing (not iterative reasoning).
+A specialized pipeline designed for multimodal processing of audio directly via native audio ingestion (Gemini 2.5 Flash), completely bypassing traditional NLP transcription layers.
 
-**Audio worker (`worker-audio`):**
-1. Extract metadata + 30-second base64 sample via `pydub`
-2. Send to Gemini 1.5 Flash (OpenRouter) — multimodal: text prompt + audio data URI
-3. LLM returns structured JSON: `{transcript, speakers, summary, topics, entities, language}`
-4. Entities synced to Neo4j via `batch_upsert_multimodal_entities`
-5. `schema_json` updated on the `data_sources` row → `indexing_status = "done"`
+```
+START
+  │
+  ▼
+[profiler]      ← Validates duration, formats (.wav, .mp3), size limits
+  │               and detects base channels and sample rates.
+  ▼
+[preprocessor]  ← Normalizes dbFS, converts to Mono 16kHz, splits silence segments
+  │               (using `pydub` and `silero-vad`), encodes to base64.
+  ▼
+[transcription] ← OpenRouter `gemini-2.5-flash-preview` natively processes
+  │               Base64 audio without intermediate TTS. Outputs raw transcript
+  │               and raw speaker turns (`SPEAKER_01`).
+  │
+route_after_transcription
+  ├── error → END
+  └── success → [diarization]
+                   │
+                   ▼  (Contextual name resolution mapping SPEAKER_XX → "Name")
+            [entity_extractor]
+                   │  LLaMA 3.1 8B (Text): Pulls Topics, Action Items, Key Quotes
+                   ▼
+             [summarizer]
+                   │  Gemini 2.0 Flash Lite: Generates 3-sentence Exec Summary
+                   ▼
+              [evaluator]
+                   │  Local SLM: ms-marco (Relevance) + nli-deberta (Attribution)
+                   ▼
+             [memory_manager]
+                   │  Qdrant (Vectors) + Neo4j (Graph mapping Speakers/Entities)
+                   ▼
+           [output_assembler] → END
+```
 
-**Image / Video workers** follow the same pattern — upload → Gemini multimodal call → entity extraction → Neo4j sync → status update.
+---
+
+### Image / Video Pipelines — Direct Task (Gemini Multimodal)
+
+These two workers use a **direct Celery task** pattern rather than a LangGraph graph, because their primary job is discovery/indexing (not iterative reasoning).
+
+**Image / Video workers** follow the pattern — upload → Gemini multimodal call → entity extraction → Neo4j sync → status update.
 
 ---
 

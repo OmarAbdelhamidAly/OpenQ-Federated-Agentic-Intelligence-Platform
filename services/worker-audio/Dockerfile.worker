@@ -1,0 +1,58 @@
+# ── Audio Intelligence Worker Dockerfile ─────────────────────────────────────
+# Handles WAV/MP3 audio transcription, speaker diarization, and entity extraction
+# via OpenRouter (gemini-2.5-flash-preview + llama-3.1-8b + gemini-flash-lite)
+FROM python:3.11-slim AS builder
+
+RUN echo 'Acquire::http::Pipeline-Depth "0";' > /etc/apt/apt.conf.d/99fixbadproxy && \
+    echo 'Acquire::Retries "5";' >> /etc/apt/apt.conf.d/99fixbadproxy && \
+    sed -i 's|http://deb.debian.org|https://deb.debian.org|g' /etc/apt/sources.list.d/*.sources 2>/dev/null || true && \
+    sed -i 's|http://deb.debian.org|https://deb.debian.org|g' /etc/apt/sources.list 2>/dev/null || true
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    libpq-dev \
+    libffi-dev \
+    libsndfile1-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /build
+COPY requirements.txt .
+RUN pip install --no-cache-dir --prefix=/install -r requirements.txt
+
+# ── Runtime ───────────────────────────────────────────────────────────────────
+FROM python:3.11-slim
+
+RUN echo 'Acquire::http::Pipeline-Depth "0";' > /etc/apt/apt.conf.d/99fixbadproxy && \
+    echo 'Acquire::Retries "5";' >> /etc/apt/apt.conf.d/99fixbadproxy && \
+    sed -i 's|http://deb.debian.org|https://deb.debian.org|g' /etc/apt/sources.list.d/*.sources 2>/dev/null || true && \
+    sed -i 's|http://deb.debian.org|https://deb.debian.org|g' /etc/apt/sources.list 2>/dev/null || true
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libpq5 \
+    curl \
+    # ffmpeg — required by pydub for audio format conversion (WAV/MP3/M4A)
+    ffmpeg \
+    # libsndfile — required by librosa/soundfile for audio I/O
+    libsndfile1 \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN groupadd -r appuser && useradd -r -g appuser -d /app -s /sbin/nologin appuser
+
+WORKDIR /app
+ENV PYTHONPATH=/app
+
+COPY --from=builder /install /usr/local
+COPY . .
+
+RUN mkdir -p /tmp/tenants /app/hf_cache && \
+    chown -R appuser:appuser /tmp/tenants /app/hf_cache
+
+RUN chown -R appuser:appuser /app
+
+USER appuser
+
+CMD ["celery", "-A", "app.worker:celery_app", "worker", \
+    "--loglevel=info", \
+    "--concurrency=2", \
+    "--queues=pillar.audio", \
+    "--prefetch-multiplier=1"]

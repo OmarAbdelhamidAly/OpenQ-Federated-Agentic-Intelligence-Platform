@@ -175,6 +175,14 @@ async def run_codebase_ingestion(source_id: str) -> None:
             )
             await session.commit()
 
+        # ── 8. Execute Semantic Weaver (Neo4j GDS GraphRAG) ────────
+        from app.use_cases.ingestion.semantic_weaver import run_code_semantic_weaver
+        try:
+            logger.info("code_triggering_semantic_weaver", source_id=source_id)
+            await run_code_semantic_weaver(source_id)
+        except Exception as e:
+            logger.error("code_semantic_weaver_failed_but_ignoring", source_id=source_id, error=str(e))
+
         logger.info("strategic_ingestion_complete", source_id=source_id)
 
     except Exception as exc:

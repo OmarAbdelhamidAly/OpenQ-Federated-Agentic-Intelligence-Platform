@@ -13,17 +13,17 @@ from typing import Any, Dict, List, Literal, Union
 from langgraph.graph import END, StateGraph, START
 
 from app.domain.analysis.entities import AnalysisState
-from app.modules.sql.agents.output_assembler import output_assembler
-from app.modules.sql.agents.data_discovery_agent import data_discovery_agent
-from app.modules.sql.agents.analysis_agent import analysis_agent
-from app.modules.sql.agents.visualization_agent import visualization_agent
-from app.modules.sql.agents.insight_agent import insight_agent
-from app.modules.sql.agents.recommendation_agent import recommendation_agent
-from app.modules.sql.agents.verifier_agent import verifier_agent
-from app.modules.sql.agents.reflection_agent import reflection_agent
-from app.modules.sql.agents.semantic_cache_agent import save_semantic_cache
-from app.modules.sql.agents.memory_manager_agent import memory_manager_agent
-from app.modules.sql.agents.evaluation_agent import evaluation_agent
+from app.modules.sql.agents.retrieval.output_assembler import output_assembler
+from app.modules.sql.agents.retrieval.data_discovery_agent import data_discovery_agent
+from app.modules.sql.agents.retrieval.analysis_agent import analysis_agent
+from app.modules.sql.agents.retrieval.visualization_agent import visualization_agent
+from app.modules.sql.agents.retrieval.insight_agent import insight_agent
+from app.modules.sql.agents.retrieval.recommendation_agent import recommendation_agent
+from app.modules.sql.agents.retrieval.verifier_agent import verifier_agent
+from app.modules.sql.agents.retrieval.reflection_agent import reflection_agent
+from app.modules.sql.agents.retrieval.semantic_cache_agent import save_semantic_cache
+from app.modules.sql.agents.retrieval.memory_manager_agent import memory_manager_agent
+from app.modules.sql.agents.retrieval.evaluation_agent import evaluation_agent
 
 from langgraph.checkpoint.redis import AsyncRedisSaver
 import redis.asyncio as redis

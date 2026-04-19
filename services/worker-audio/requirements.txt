@@ -1,0 +1,52 @@
+# ── Core Framework ────────────────────────────────────────────────────────────
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+python-multipart==0.0.20
+
+# ── Database ──────────────────────────────────────────────────────────────────
+sqlalchemy[asyncio]==2.0.36
+asyncpg==0.30.0
+psycopg2-binary==2.9.10
+
+# ── Pydantic ──────────────────────────────────────────────────────────────────
+pydantic==2.10.4
+pydantic-settings==2.7.1
+
+# ── Celery + Redis ────────────────────────────────────────────────────────────
+celery[redis]==5.4.0
+redis==5.2.1
+
+# ── AI / LLM ─────────────────────────────────────────────────────────────────
+langchain==0.3.14
+langchain-community==0.3.14
+langchain-openai==0.3.1
+langchain-google-genai==2.0.9
+langgraph==0.2.60
+langgraph-checkpoint-redis>=0.1.0
+
+# ── Vector DB ─────────────────────────────────────────────────────────────────
+qdrant-client>=1.11.0
+fastembed>=0.4.0
+
+# ── Neo4j Graph DB ────────────────────────────────────────────────────────────
+neo4j==5.21.0
+
+# ── Audio Processing ──────────────────────────────────────────────────────────
+pydub>=0.25.1          # Audio normalization, format conversion, silence detection
+librosa>=0.10.0        # Audio feature extraction (duration, sample_rate, etc.)
+soundfile>=0.12.1      # Fast audio file I/O (backend for librosa)
+
+# ── Logging ───────────────────────────────────────────────────────────────────
+structlog==24.4.0
+
+# ── Encryption ────────────────────────────────────────────────────────────────
+cryptography==44.0.0
+
+# ── RAG Evaluation (Local Zero-Cost) ─────────────────────────────────────────
+sentence-transformers>=3.0.0
+torch>=2.2.0
+
+# ── Testing ───────────────────────────────────────────────────────────────────
+pytest==8.3.4
+pytest-asyncio==0.25.0
+httpx==0.28.1

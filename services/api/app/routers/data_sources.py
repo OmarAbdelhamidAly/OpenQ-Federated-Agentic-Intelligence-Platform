@@ -252,6 +252,8 @@ async def upload_file(
         # Code
         ".zip", ".py", ".js", ".ts", ".env", ".java",
         ".cpp", ".h", ".go", ".sh", ".yaml", ".yml",
+        # Audio
+        ".wav", ".mp3", ".m4a", ".ogg", ".flac", ".webm",
         # Legacy Support
         ".jpeg", ".jpg", ".png", ".webp"
     )
@@ -321,6 +323,65 @@ async def upload_file(
         )
         return DataSourceResponse.model_validate(source)
 
+
+    # ── Audio Intelligence (WAV, MP3, M4A, etc.) ──────────────────────────────────
+    AUDIO_EXTS = {".wav", ".mp3", ".m4a", ".ogg", ".flac", ".webm"}
+    if ext in AUDIO_EXTS:
+        schema_json = {
+            "source_type": "audio",
+            "file_extension": ext,
+            "progress": 0,
+            "current_step": "Queued for Audio Intelligence pipeline...",
+        }
+
+        source = DataSource(
+            id=uuid.uuid4(),
+            tenant_id=admin.tenant_id,
+            type="audio",
+            name=file.filename,
+            file_path=file_path,
+            context_hint=context_hint,
+            schema_json=schema_json,
+            # Audio bypasses indexing and auto_analysis_service directly into job (or we use indexing_status="running")
+            # For now let's just trigger discovery like JSON, but using pillar.audio
+        )
+        db.add(source)
+        await db.commit()
+        await db.refresh(source)
+
+        logger.info(
+            "audio_source_uploaded",
+            tenant_id=tenant_id_str,
+            user_id=str(admin.id),
+            source_id=str(source.id),
+            filename=file.filename,
+        )
+        # Because audio intelligence is currently bound to AnalysisJobs in worker-audio,
+        # we can either create a dummy job here and trigger it, or just send it to a source processing queue.
+        # Let's trigger process_source_discovery on pillar.audio to keep it uniform, which we need to make sure worker supports.
+        # Actually worker-audio only expects `app.worker.run_audio_analysis`.
+        # Let's create an AnalysisJob right here, because Audio pipeline processes a Job.
+        from app.models.analysis_job import AnalysisJob
+        
+        job = AnalysisJob(
+            tenant_id=admin.tenant_id,
+            user_id=admin.id,
+            source_id=source.id,
+            question="Provide a comprehensive analysis of this audio recording.",
+            status="pending",
+        )
+        db.add(job)
+        await db.commit()
+        await db.refresh(job)
+
+        from app.worker import celery_app
+        celery_app.send_task(
+            "app.worker.run_audio_analysis",
+            args=[str(job.id)],
+            queue="pillar.audio"
+        )
+        
+        return DataSourceResponse.model_validate(source)
 
     # ── Codebase (Individual Files) ──────────────────────────────────────────
     if ext in (".py", ".js", ".ts", ".env", ".java", ".cpp", ".h", ".go", ".sh", ".yaml", ".yml"):

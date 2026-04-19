@@ -4,14 +4,14 @@ from langgraph.graph import StateGraph, START, END
 
 from app.domain.analysis.entities import CodeAnalysisState
 from app.infrastructure.neo4j_adapter import Neo4jAdapter
-from app.modules.code.agents.data_discovery_agent import data_discovery_agent
-from app.modules.code.agents.cypher_generator_agent import cypher_generator_agent
-from app.modules.code.agents.reflection_agent import reflection_agent
-from app.modules.code.agents.insight_agent import insight_agent
-from app.modules.code.agents.evaluation_agent import evaluation_agent
-from app.modules.code.agents.memory_manager_agent import memory_manager_agent
-from app.modules.code.agents.semantic_cache_agent import save_semantic_cache
-from app.modules.code.agents.output_assembler import output_assembler
+from app.modules.code.agents.retrieval.data_discovery_agent import data_discovery_agent
+from app.modules.code.agents.retrieval.cypher_generator_agent import cypher_generator_agent
+from app.modules.code.agents.retrieval.reflection_agent import reflection_agent
+from app.modules.code.agents.retrieval.insight_agent import insight_agent
+from app.modules.code.agents.retrieval.evaluation_agent import evaluation_agent
+from app.modules.code.agents.retrieval.memory_manager_agent import memory_manager_agent
+from app.modules.code.agents.retrieval.semantic_cache_agent import save_semantic_cache
+from app.modules.code.agents.retrieval.output_assembler import output_assembler
 
 logger = structlog.get_logger(__name__)
 

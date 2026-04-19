@@ -58,6 +58,12 @@ class Neo4jAdapter:
     async def close(self) -> None:
         await self.driver.close()
 
+    async def run_query(self, query: str, parameters: dict[str, Any] = None) -> Any:
+        """Run a raw Cypher query asynchronously."""
+        async with self.driver.session() as session:
+            result = await session.run(query, parameters or {})
+            return await result.data()
+
     async def batch_upsert_document_structure(
         self, 
         source_id: str, 

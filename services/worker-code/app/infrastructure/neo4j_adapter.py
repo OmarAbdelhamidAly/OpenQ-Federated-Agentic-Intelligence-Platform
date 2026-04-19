@@ -197,6 +197,30 @@ class Neo4jAdapter:
                         source_id=source_id, entities=classes[i:i+batch_size],
                     )
         logger.info("neo4j_entities_upserted_async", source_id=source_id, functions=len(functions), classes=len(classes))
+        
+        # Ensure Vector Indexes exist for GDS GraphRAG
+        async with self.driver.session() as session:
+            await session.run(
+                """
+                CREATE VECTOR INDEX code_function_embeddings IF NOT EXISTS 
+                FOR (fn:Function) ON (fn.embedding)
+                OPTIONS {indexConfig: {
+                    `vector.dimensions`: 768,
+                    `vector.similarity_function`: 'cosine'
+                }}
+                """
+            )
+            await session.run(
+                """
+                CREATE VECTOR INDEX code_class_embeddings IF NOT EXISTS 
+                FOR (cl:Class) ON (cl.embedding)
+                OPTIONS {indexConfig: {
+                    `vector.dimensions`: 768,
+                    `vector.similarity_function`: 'cosine'
+                }}
+                """
+            )
+        logger.info("neo4j_vector_indexes_ensured", source_id=source_id)
 
     async def batch_upsert_dependencies(self, source_id: str, imports: list[dict], batch_size: int = 1000) -> None:
         if not imports: return

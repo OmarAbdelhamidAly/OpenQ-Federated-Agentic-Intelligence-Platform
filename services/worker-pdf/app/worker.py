@@ -249,10 +249,10 @@ def process_source_indexing(source_id: str):
     return asyncio.run(_execute_source_indexing(source_id))
 
 async def _execute_source_indexing(source_id: str):
-    from app.modules.pdf.flows.deep_vision.agents.indexing_agent import indexing_agent_source
-    from app.modules.pdf.flows.fast_text.agents.fast_indexing_agent import fast_indexing_agent
-    from app.modules.pdf.flows.strategic_nexus.agents.nexus_strategic_indexer import strategic_nexus_indexer
-    from app.modules.pdf.flows.hybrid_ocr.agents.hybrid_indexing_agent import hybrid_indexing_agent
+    from app.modules.pdf.agents.indexing.deep_vision.agents.indexing_agent import indexing_agent_source
+    from app.modules.pdf.agents.indexing.fast_text.agents.fast_indexing_agent import fast_indexing_agent
+    from app.modules.pdf.agents.indexing.strategic_nexus.agents.nexus_strategic_indexer import strategic_nexus_indexer
+    from app.modules.pdf.agents.indexing.hybrid_ocr.agents.hybrid_indexing_agent import hybrid_indexing_agent
     from app.modules.pdf.utils.unstructured_partitioner import recommend_strategy
     from app.models.data_source import DataSource
     from app.infrastructure.database.postgres import async_session_factory
@@ -315,6 +315,41 @@ async def _execute_source_indexing(source_id: str):
     
     logger.info("tiered_indexing_completed", source_id=source_id, final_status=final_status)
 
+    # ── 5. NEW: GraphRAG Foundation (Knowledge Builder) ──────────────────
+    if final_status == "success":
+        try:
+            from app.modules.pdf.agents.indexing.entity_extractor import extract_pdf_entities
+            from app.modules.pdf.agents.indexing.graph_knowledge_builder import build_pdf_knowledge_graph
+            
+            # Find the fast_text result which contains the chunk_data
+            fast_res = next((r for r in results if isinstance(r, dict) and r.get("mode") == "fast_text"), None)
+            if fast_res and "chunk_data" in fast_res:
+                logger.info("pdf_graph_rag_entities_extraction", source_id=source_id)
+                entity_data = await extract_pdf_entities(fast_res["chunk_data"])
+                
+                tenant_id = "00000000-0000-0000-0000-000000000000" # fallback
+                async with async_session_factory() as db:
+                    res_ds = await db.execute(select(DataSource).where(DataSource.id == uuid.UUID(source_id)))
+                    src_ds = res_ds.scalar_one_or_none()
+                    if src_ds: tenant_id = str(src_ds.tenant_id)
+
+                await build_pdf_knowledge_graph(
+                    source_id=source_id,
+                    tenant_id=tenant_id,
+                    chunks=fast_res["chunk_data"],
+                    entities=entity_data.get("entities", []),
+                    topics=entity_data.get("topics", []),
+                    summary=entity_data.get("document_summary", "Strategic Document Analysis")
+                )
+                
+                # ── 6. NEW: Semantic Weaver (GDS Algorithms) ─────────────────
+                logger.info("pdf_graph_rag_semantic_weaver", source_id=source_id)
+                from app.modules.pdf.agents.indexing.semantic_weaver import run_pdf_semantic_weaver
+                await run_pdf_semantic_weaver(source_id)
+                
+        except Exception as graph_err:
+            logger.error("pdf_graph_rag_failed", source_id=source_id, error=str(graph_err))
+
     if final_status == "success":
         celery_app.send_task(
             "auto_analysis_task",
@@ -336,7 +371,7 @@ async def _execute_source_indexing(source_id: str):
     return {"status": final_status, "modes": [r.get("mode") for r in results if isinstance(r, dict)]}
 
 async def _execute_indexing(doc_id: str):
-    from app.modules.pdf.flows.deep_vision.agents.indexing_agent import indexing_agent
+    from app.modules.pdf.agents.indexing.deep_vision.agents.indexing_agent import indexing_agent
     logger.info("indexing_task_received", doc_id=doc_id)
     result = await indexing_agent(doc_id)
     return result

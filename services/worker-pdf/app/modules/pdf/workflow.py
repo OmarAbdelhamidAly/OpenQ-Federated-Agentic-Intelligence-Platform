@@ -3,21 +3,21 @@ from typing import Any, Dict, List, Literal, Union
 from langgraph.graph import END, StateGraph, START
 
 from app.domain.analysis.entities import AnalysisState
-from app.modules.pdf.agents.query_refiner import query_refiner_agent
-from app.modules.pdf.agents.router_agent import router_agent
-from app.modules.pdf.agents.chat_agent import chat_agent
-from app.modules.pdf.agents.retrieval_agent import adaptive_retrieval_agent
-from app.modules.pdf.agents.verifier_agent import verifier_agent
-from app.modules.pdf.agents.analyst_agent import analyst_agent
-from app.modules.pdf.agents.evaluation_agent import evaluation_agent
-from app.modules.pdf.agents.memory_manager_agent import memory_manager_agent
-from app.modules.pdf.agents.semantic_cache_agent import save_semantic_cache
-from app.modules.pdf.agents.output_assembler import output_assembler
+from app.modules.pdf.agents.retrieval.query_refiner import query_refiner_agent
+from app.modules.pdf.agents.retrieval.router_agent import router_agent
+from app.modules.pdf.agents.retrieval.chat_agent import chat_agent
+from app.modules.pdf.agents.retrieval.retrieval_agent import adaptive_retrieval_agent
+from app.modules.pdf.agents.retrieval.verifier_agent import verifier_agent
+from app.modules.pdf.agents.retrieval.analyst_agent import analyst_agent
+from app.modules.pdf.agents.retrieval.evaluation_agent import evaluation_agent
+from app.modules.pdf.agents.retrieval.memory_manager_agent import memory_manager_agent
+from app.modules.pdf.agents.retrieval.semantic_cache_agent import save_semantic_cache
+from app.modules.pdf.agents.retrieval.output_assembler import output_assembler
 
 # Import existing flow agents
-from app.modules.pdf.flows.deep_vision.agents.pdf_agent import colpali_retrieval_agent as vision_synthesis
-from app.modules.pdf.flows.fast_text.agents.fast_text_agent import fast_text_retrieval_agent as text_synthesis
-from app.modules.pdf.flows.hybrid_ocr.agents.hybrid_ocr_agent import hybrid_ocr_retrieval_agent as ocr_synthesis
+from app.modules.pdf.agents.indexing.deep_vision.agents.pdf_agent import colpali_retrieval_agent as vision_synthesis
+from app.modules.pdf.agents.indexing.fast_text.agents.fast_text_agent import fast_text_retrieval_agent as text_synthesis
+from app.modules.pdf.agents.indexing.hybrid_ocr.agents.hybrid_ocr_agent import hybrid_ocr_retrieval_agent as ocr_synthesis
 
 logger = structlog.get_logger(__name__)
 

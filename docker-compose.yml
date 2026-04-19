@@ -83,8 +83,8 @@ services:
       NEO4J_apoc_export_file_enabled: "true"
       NEO4J_apoc_import_file_enabled: "true"
       NEO4J_apoc_import_file_use__neo4j__config: "true"
-      NEO4J_dbms_security_procedures_unrestricted: apoc.*
-      NEO4J_PLUGINS: '["apoc"]'
+      NEO4J_dbms_security_procedures_unrestricted: apoc.*, gds.*
+      NEO4J_PLUGINS: '["apoc", "graph-data-science"]'
     volumes: [neo4jdata:/data]
     networks: [backend-net]
     deploy:
@@ -276,6 +276,37 @@ services:
           cpus: '3.0'
           memory: 14G
     depends_on: [redis, postgres, ollama, qdrant]
+
+  # ── Audio Intelligence Worker ────────────────────────────────
+  worker-audio:
+    build: { context: ./services/worker-audio, dockerfile: Dockerfile.worker }
+    container_name: analyst-worker-audio
+    restart: unless-stopped
+    env_file: [.env]
+    environment:
+      DATABASE_URL: postgresql+asyncpg://postgres:postgres@postgres:5432/analyst_agent
+      REDIS_URL: redis://redis:6379/0
+      NEO4J_URI: bolt://neo4j:7687
+      NEO4J_USERNAME: neo4j
+      NEO4J_PASSWORD: analyst_neo4j_password
+      QDRANT_URL: http://qdrant:6333
+    volumes:
+      - tenant_uploads:/tmp/tenants
+      - ./services/worker-audio:/app
+    networks: [backend-net]
+    command: ["celery", "-A", "app.worker:celery_app", "worker",
+              "-Q", "pillar.audio",
+              "--loglevel=info",
+              "--concurrency=2",
+              "--prefetch-multiplier=1"]
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 2G
+    depends_on: [redis, postgres, qdrant, neo4j]
+
+
 
   # ── Universal Strategic Nexus: Multi-Source Orchestration ──────
   worker-nexus:

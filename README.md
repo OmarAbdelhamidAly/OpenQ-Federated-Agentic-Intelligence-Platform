@@ -186,6 +186,11 @@ OpenQ/
 │   │
 │   ├── worker-json/              # Layer 3: JSON pipeline (10 nodes, MongoDB + Qdrant)
 │   ├── worker-pdf/               # Layer 3: Universal Document (Unstructured Text & Multimodal PDF)
+│   ├── worker-audio/             # Layer 3: Audio Intelligence (9 nodes, Whisper/Gemini audio, Qdrant+Neo4j)
+│   │   └── app/modules/audio/
+│   │       ├── workflow.py       # LangGraph: profiler → transcription → diarization
+│   │       │                     # → entity_extractor → summarizer → evaluator → memory
+│   │       └── agents/           # preprocessor_agent · diarization_agent...
 │   │
 │   ├── worker-code/              # Layer 3: Codebase AST pipeline (8 nodes, Neo4j)
 │   │   └── app/modules/code/

@@ -7,12 +7,12 @@ logger = structlog.get_logger(__name__)
 
 def build_nexus_graph(checkpointer=None):
     """Build the autonomous orchestration graph."""
-    from app.modules.nexus.agents.nexus_router import nexus_router
-    from app.modules.nexus.agents.graph_explorer import graph_explorer
-    from app.modules.nexus.agents.pillar_orchestrator import pillar_orchestrator
-    from app.modules.nexus.agents.synthesis_engine import synthesis_engine
-    from app.modules.nexus.agents.memory_manager_agent import memory_manager_agent
-    from app.modules.nexus.agents.semantic_cache_agent import save_semantic_cache
+    from app.modules.nexus.agents.retrieval.nexus_router import nexus_router
+    from app.modules.nexus.agents.retrieval.graph_explorer import graph_explorer
+    from app.modules.nexus.agents.retrieval.pillar_orchestrator import pillar_orchestrator
+    from app.modules.nexus.agents.retrieval.synthesis_engine import synthesis_engine
+    from app.modules.nexus.agents.retrieval.memory_manager_agent import memory_manager_agent
+    from app.modules.nexus.agents.retrieval.semantic_cache_agent import save_semantic_cache
 
     workflow = StateGraph(NexusState)
 

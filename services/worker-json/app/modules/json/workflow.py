@@ -9,16 +9,16 @@ from typing import Any, Literal
 from langgraph.graph import END, StateGraph, START
 
 from app.domain.analysis.entities import AnalysisState
-from app.modules.json.agents.output_assembler import output_assembler
-from app.modules.json.agents.data_discovery_agent import data_discovery_agent
-from app.modules.json.agents.guardrail_agent import guardrail_agent
-from app.modules.json.agents.analysis_agent import analysis_agent
-from app.modules.json.agents.reflection_agent import reflection_agent
-from app.modules.json.agents.visualization_agent import visualization_agent
-from app.modules.json.agents.insight_agent import insight_agent
-from app.modules.json.agents.verifier_agent import verifier_agent
-from app.modules.json.agents.recommendation_agent import recommendation_agent
-from app.modules.json.agents.semantic_cache_agent import save_semantic_cache
+from app.modules.json.agents.retrieval.output_assembler import output_assembler
+from app.modules.json.agents.retrieval.data_discovery_agent import data_discovery_agent
+from app.modules.json.agents.retrieval.guardrail_agent import guardrail_agent
+from app.modules.json.agents.retrieval.analysis_agent import analysis_agent
+from app.modules.json.agents.retrieval.reflection_agent import reflection_agent
+from app.modules.json.agents.retrieval.visualization_agent import visualization_agent
+from app.modules.json.agents.retrieval.insight_agent import insight_agent
+from app.modules.json.agents.retrieval.verifier_agent import verifier_agent
+from app.modules.json.agents.retrieval.recommendation_agent import recommendation_agent
+from app.modules.json.agents.retrieval.semantic_cache_agent import save_semantic_cache
 
 def check_analysis_result(state: AnalysisState) -> Literal["reflection", "visualize"]:
     """Route to reflection on error (up to 3 retries)."""

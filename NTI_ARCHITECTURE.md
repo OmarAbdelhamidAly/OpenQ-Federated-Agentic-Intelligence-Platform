@@ -1,8 +1,8 @@
 # 🏛️ Architecture Documentation
 
-**Insightify — Autonomous Multi-Pillar Enterprise Data Intelligence Platform**
+**OpenQ — Autonomous Multi-Pillar Enterprise Data Intelligence Platform**
 
-> An open, composable alternative to Amazon Q Business — built for organizations sitting on fragmented multi-modal, multi-format enterprise data.
+> An open, composable enterprise intelligence framework — built for organizations sitting on fragmented multi-modal, multi-format data.
 
 ---
 
@@ -28,8 +28,11 @@
 **Separation by concern, not by team.**
 Each service owns one concept: the API Gateway owns HTTP concerns (auth, routing, validation), the Governance worker owns policy enforcement, each execution pillar owns one data modality. No service does two jobs.
 
-**Celery queues as the API between layers.**
-Services communicate only through named Celery queues over Redis. `api → governance queue → pillar.sql queue`. No direct HTTP calls between workers. A worker crash never blocks the API — the job stays in the queue until a healthy worker picks it up.
+**Celery queues and Event Buses as the communication spine.**
+Services communicate asynchronously through named Celery queues over Redis (`api → governance → pillar.sql`), and real-time frontend updates are streamed over WebSockets linked to a Redis Pub/Sub backplane. No direct REST polling.
+
+**Fast gRPC for East-West traffic.**
+Critical internal validations (like Rate Limiting and RBAC via the Corporate Service) bypass HTTP entirely, using Protobuf via gRPC for sub-millisecond execution.
 
 **Stateless workers, stateful checkpointing.**
 Every Celery worker is ephemeral. LangGraph state is persisted to Redis via `AsyncRedisSaver`. A HITL-paused SQL job survives a worker restart, a pod eviction, or a full cluster reboot.
@@ -390,7 +393,7 @@ check_analysis_result
 
 ### PDF Pipeline — 10 Nodes (Orchestrator-Worker StateGraph)
 
-The most architecturally complex pipeline. A master orchestrator routes between **three specialist synthesis engines** based on document type and retrieval quality.
+The most architecturally complex pipeline. A master orchestrator routes between **three specialist synthesis engines** based on document type. It utilizes **Parent-Child Chunking** for dense Context preservation and semantic JSON Ontologies extracted via Vision-Models.
 
 ```
 START
@@ -497,7 +500,7 @@ These three workers use a **direct Celery task** pattern rather than a LangGraph
 
 ### Nexus Pipeline — 6 Nodes (Federated Orchestrator)
 
-The strategic intelligence layer. Reads the shared Neo4j knowledge graph to produce a **5-pillar Executive Strategic Intelligence Report**.
+The strategic intelligence layer. Reads the shared Neo4j knowledge graph and utilizes **Multi-Query RAG-Fusion** accompanied by a **Cross-Encoder Re-Ranker** to produce a 5-pillar Executive Strategic Intelligence Report without Hallucinations or Context Sprawl.
 
 ```
 START

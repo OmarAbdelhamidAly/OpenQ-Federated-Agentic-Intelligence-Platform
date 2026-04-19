@@ -1,6 +1,6 @@
 # 📡 API Documentation
 
-**Insightify — Autonomous Multi-Pillar Enterprise Data Intelligence Platform**
+**OpenQ — Autonomous Multi-Pillar Enterprise Data Intelligence Platform**
 
 Base URL: `http://localhost:8002/api/v1`
 
@@ -24,10 +24,12 @@ Protected endpoints require `Authorization: Bearer {access_token}`.
 9. [Groups](#9-groups)
 10. [Voice](#10-voice)
 11. [Health](#11-health)
-12. [Error Responses](#12-error-responses)
-13. [Role-Based Access](#13-role-based-access)
-14. [Rate Limits Reference](#14-rate-limits-reference)
-15. [Pipeline Routing Reference](#15-pipeline-routing-reference)
+12. [WebSocket Streaming (Real-Time)](#12-websocket-streaming-real-time)
+13. [Internal gRPC Protocols](#13-internal-grpc-protocols)
+14. [Error Responses](#14-error-responses)
+15. [Role-Based Access](#15-role-based-access)
+16. [Rate Limits Reference](#16-rate-limits-reference)
+17. [Pipeline Routing Reference](#17-pipeline-routing-reference)
 
 ---
 
@@ -774,7 +776,52 @@ No authentication required. Returns deep health — verifies PostgreSQL, Redis, 
 
 ---
 
-## 12. Error Responses
+---
+
+## 12. WebSocket Streaming (Real-Time)
+
+OpenQ supports real-time streaming of AI thinking steps and reasoning processes via WebSockets. This allows for a zero-polling, highly interactive user experience.
+
+### WS /api/v1/ws/{job_id}/stream
+
+**Protected.** Connect to a job's real-time reasoning stream.
+
+**Authentication:** 
+Since standard WebSockets do not support headers in most browsers, provide the JWT in the query parameter:
+`ws://localhost:8002/api/v1/ws/{job_id}/stream?token={JWT_ACCESS_TOKEN}`
+
+**Behavior:**
+- Upon connection, the server subscribes to a Redis Pub/Sub channel unique to the `job_id`.
+- The server streams JSON packets representing LangGraph node transitions and LLM reasoning steps.
+- Connection is closed by the server once the job reaches a terminal state (`done` or `error`).
+
+**Stream Packet Structure:**
+```json
+{
+  "node": "analysis_generator",
+  "status": "in_progress",
+  "content": "Analyzing schema and generating SQL query...",
+  "timestamp": "2026-04-19T02:00:00Z"
+}
+```
+
+---
+
+## 13. Internal gRPC Protocols
+
+For high-performance "East-West" traffic within the cluster, OpenQ utilizes gRPC and Protocol Buffers. This is primarily used for sub-millisecond IAM checks and rate-limiting between workers and the corporate service.
+
+### Service: `CorporateService`
+**Definition:** `interfaces/rate_limiter.proto`
+
+**Methods:**
+- `CheckRateLimit(LimitRequest) returns (LimitResponse)`
+  - Used by every worker node to verify if the tenant hasn't exceeded their AI quota before triggering expensive LLM calls.
+  - **Latency:** < 1ms (Internal VPC).
+
+---
+
+## 14. Error Responses
 
 All errors follow a consistent envelope:
 
@@ -800,7 +847,7 @@ All errors follow a consistent envelope:
 
 ---
 
-## 13. Role-Based Access
+## 15. Role-Based Access
 
 | Endpoint Group | `admin` | `viewer` |
 |---|---|---|
@@ -838,7 +885,7 @@ All errors follow a consistent envelope:
 
 ---
 
-## 14. Rate Limits Reference
+## 16. Rate Limits Reference
 
 | Endpoint | Limit | Enforcement |
 |---|---|---|
@@ -859,23 +906,23 @@ When exceeded, returns `429 Too Many Requests` with a `Retry-After` header.
 
 ---
 
-## 15. Pipeline Routing Reference
+## 17. Pipeline Routing Reference
 
 The governance worker automatically routes each job to the correct pillar worker based on `data_source.type`. This table summarizes the full routing logic:
 
 | `data_source.type` | Celery Queue | Worker | LangGraph Nodes | Key Features |
 |---|---|---|---|---|
 | `csv` / `xlsx` / `sqlite` (file) | `pillar.csv` | worker-csv | 11 (Cyclic) | Data cleaning, guardrail, statistical tools |
-| `sql` (file SQLite) | `pillar.sqlite` | worker-sql | 12 (Cyclic) | HITL, reflection, hybrid fusion |
-| `sql` (PostgreSQL) | `pillar.postgresql` | worker-sql | 12 (Cyclic) | HITL, reflection, hybrid fusion |
-| `sql` (MySQL) | `pillar.sql` | worker-sql | 12 (Cyclic) | HITL, reflection, hybrid fusion |
+| `sql` (file SQLite) | `pillar.sqlite` | worker-sql | 12 (Cyclic) | HITL, Vector Semantic Routing, hybrid fusion |
+| `sql` (PostgreSQL) | `pillar.postgresql` | worker-sql | 12 (Cyclic) | HITL, Vector Semantic Routing, hybrid fusion |
+| `sql` (MySQL) | `pillar.sql` | worker-sql | 12 (Cyclic) | HITL, Vector Semantic Routing, hybrid fusion |
 | `json` | `pillar.json` | worker-json | 10 (Cyclic) | MongoDB aggregation, Qdrant RAG |
-| `pdf` / `document` | `pillar.pdf` | worker-pdf | 10 (Orchestrator) | Triple synthesis engines, anti-hallucination |
-| `codebase` | `pillar.code` | worker-code | 8 (Cyclic) | Neo4j AST, Cypher generation |
+| `pdf` / `document` | `pillar.pdf` | worker-pdf | 10 (Orchestrator) | Parent-Child Chunking, Vision synthesis, anti-hallucination |
+| `codebase` | `pillar.code` | worker-code | 8 (Cyclic) | Neo4j AST, Cypher generation, relational Q&A |
 | `audio` | `pillar.audio` | worker-audio | Direct task | Gemini 1.5 Flash, Neo4j entity sync |
 | `image` | `pillar.image` | worker-image | Direct task | Gemini Vision, Neo4j entity sync |
 | `video` | `pillar.video` | worker-video | Direct task | Gemini Vision, Neo4j entity sync |
-| Multi-source | `pillar.nexus` | worker-nexus | 6 (Federated) | Neo4j cross-pillar forge, 5-pillar synthesis |
+| Multi-source | `pillar.nexus` | worker-nexus | 6 (Federated) | RAG-Fusion, Re-Ranking, 5-pillar synthesis |
 
 **Status lifecycle:**
 

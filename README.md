@@ -56,6 +56,9 @@ A user connects a data source, types a natural-language question, and the system
 
 | Feature | Description |
 |---|---|
+| 🔀 **Vector Semantic Routing** | SQL/DB schema discovery bypassing regex: `FastEmbed` and Cosine Similarity route queries to exact schemas via `worker-sql`. |
+| 🧬 **Multi-Query RAG-Fusion** | The `worker-nexus` orchestrator breaks down complex questions into sub-queries and uses a **Cross-Encoder Re-Ranker** to filter noise and prevent hallucinations. |
+| 🚀 **WebSockets & gRPC** | Real-time streaming of LLM `thinking_steps` via Redis Pub/Sub WebSockets (Zero REST Polling), and sub-millisecond IAM verification via internal gRPC Protobufs. |
 | 🔁 **Zero-Row Reflection** | SQL queries returning 0 rows trigger automatic case-mismatch detection against `low_cardinality_values` and self-correcting retry (max 3 iterations, no cold restart) |
 | 👁️ **Human-in-the-Loop (HITL)** | SQL queries against live databases pause at `interrupt_after=["human_approval"]`. Full LangGraph state serialized to Redis via `AsyncRedisSaver` — survives worker restarts, pod evictions, cluster reboots |
 | 🧬 **Hybrid Fusion** | SQL results enriched with PDF context via Gemini 2.0 Flash Multimodal — pages rendered as images, semantically retrieved from Qdrant, synthesized into a unified insight |
@@ -87,7 +90,7 @@ The platform is a **5-layer microservices stack** with **25 containers**, orches
 │  LAYER 1 — API GATEWAY  (services/api · FastAPI · :8002)                │
 │                                                                          │
 │  JWT auth + refresh rotation · Rate limiting · AES-256-GCM encrypt      │
-│  Multi-tenant routing · 11 router modules · Celery task dispatch        │
+│  Multi-tenant routing · WebSockets (Streaming UX) · Celery task dispatch │
 └──────────────────────────────────┬──────────────────────────────────────┘
                                    │ Celery tasks via Redis
 ┌──────────────────────────────────▼──────────────────────────────────────┐
@@ -112,7 +115,7 @@ The platform is a **5-layer microservices stack** with **25 containers**, orches
                    ▼
 ┌──────────────────────────────────────────────────────────────────────────┐
 │  worker-nexus — Federated Multi-Pillar Orchestrator                     │
-│  Neo4j cross-pillar forge → context gather → 5-pillar synthesis         │
+│  Neo4j cross-pillar forge → RAG-Fusion → Re-Ranking → 5-pillar synthesis│
 └──────────────────────────────────────────────────────────────────────────┘
                                    │
 │  LAYER 4 — EXPORTER  (services/exporter · Celery worker)               │
@@ -120,8 +123,8 @@ The platform is a **5-layer microservices stack** with **25 containers**, orches
 └──────────────────────────────────┬──────────────────────────────────────┘
                                    │
 ┌──────────────────────────────────▼──────────────────────────────────────┐
-│  LAYER 5 — CORPORATE  (services/corporate · FastAPI · :8009)           │
-│  Organizational Hierarchies (20 levels) · Task Governance · Submission  │
+│  LAYER 5 — CORPORATE  (services/corporate · FastAPI + gRPC · :8009)    │
+│  Org-Tree (20 levels) · Task Governance · Sub-ms Auth via Protobuf      │
 └─────────────────────────────────────────────────────────────────────────┘
 
 SHARED INFRASTRUCTURE

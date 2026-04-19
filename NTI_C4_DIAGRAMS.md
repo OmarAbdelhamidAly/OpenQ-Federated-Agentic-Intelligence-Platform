@@ -1,6 +1,6 @@
 # C4 Architecture Diagrams
 
-**Insightify — Autonomous Multi-Pillar Enterprise Data Intelligence Platform**
+**OpenQ — Autonomous Multi-Pillar Enterprise Data Intelligence Platform**
 
 > C4 Model: four levels of zoom — Context → Container → Component → Code.
 > Each diagram narrows scope. Start at Level 1 for the big picture.
@@ -28,11 +28,11 @@ graph TB
     scales the platform via
     Docker Compose / Kubernetes"]
 
-    System["🤖 Insightify
+    System["🤖 OpenQ
     Autonomous multi-tenant SaaS platform.
     Turns raw multi-modal data into
-    executive insights via 9 specialized
-    LangGraph agent pipelines.
+    executive insights via 22 microservices
+    orchestrated by LangGraph agents.
     Supports CSV, SQL, JSON, PDF,
     Code, Audio, Image, Video."]
 
@@ -207,8 +207,12 @@ graph TB
 
     User    -->|"HTTPS"| UI
     User    -->|"HTTPS"| ReactUI
+    UI      ==>|"WSS (Real-time Streaming)"| API
+    ReactUI ==>|"WSS (Real-time Streaming)"| API
     UI      -->|"fetch REST"| API
     ReactUI -->|"fetch REST"| API
+    Workers ==>|"gRPC (Internal Auth)"| CorporateService["Corporate Service"]
+    style CorporateService fill:#4a148c,color:#fff
     API     -->|"Celery task dispatch"| Redis
     Redis   -->|"task pickup"| Gov
     Gov     -->|"Celery task dispatch"| Redis
@@ -317,6 +321,9 @@ graph LR
 
             VoiR["voice.py
             voice-to-text query submission"]
+
+            WSAnalR["ws_analysis.py
+            WebSocket stream · job thinking steps"]
         end
 
         subgraph Infra ["Infrastructure (Clean Arch: outermost ring)"]
@@ -478,8 +485,8 @@ graph TD
             FK/PK detection"]
 
             SS["schema_selector
-            compress schema to
-            relevant tables only"]
+            FastEmbed Vector Semantic
+            Routing to relevant tables"]
 
             SV["sql_validator
             syntax pre-check

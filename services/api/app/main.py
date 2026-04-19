@@ -168,6 +168,9 @@ def create_app() -> FastAPI:
     app.include_router(knowledge.router)
     app.include_router(policies.router)
 
+    from app.routers import ws_analysis
+    app.include_router(ws_analysis.router)
+
     app.include_router(voice.router)
     app.include_router(codebase.router)
 

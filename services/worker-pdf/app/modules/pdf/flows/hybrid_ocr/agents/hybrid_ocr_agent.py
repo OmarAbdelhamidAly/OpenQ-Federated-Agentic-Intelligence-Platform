@@ -27,7 +27,10 @@ async def _process_image_block(page: fitz.Page, bbox: tuple, llm: Any) -> str:
         
         msg = HumanMessage(
             content=[
-                {"type": "text", "text": "Extract all text, tables, and data from this image accurately. Preserve layout and Arabic diacritics (tashkeel) if present."},
+                {
+                    "type": "text", 
+                    "text": "Extract all text, tables, and data from this image accurately. YOU MUST USE STRICT MARKDOWN FORMATTING. If there are tables, use standard Markdown table syntax (| Col | Col |). Preserve layout hierarchy with headers (#) and lists (-). Preserve Arabic diacritics (tashkeel) if present."
+                },
                 {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{b64_img}"}}
             ]
         )

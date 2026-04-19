@@ -1,0 +1,25 @@
+syntax = "proto3";
+
+package openq.corporate;
+
+// The RateLimiter service verifies if a tenant or user has exceeded their query limits
+service RateLimiter {
+  // Check if a query can be executed based on the user's tier
+  rpc CanExecute (RateLimitRequest) returns (RateLimitResponse) {}
+  
+  // Record that a query was executed to decrement quota
+  rpc RecordExecution (RateLimitRequest) returns (RateLimitResponse) {}
+}
+
+message RateLimitRequest {
+  string tenant_id = 1;
+  string user_id = 2;
+  string action = 3; // e.g., "nexus_query", "export_pdf", "train_model"
+  int32 token_usage = 4; // Optional: if checking specific token budgets
+}
+
+message RateLimitResponse {
+  bool allowed = 1;
+  string reason = 2; // Only populated if allowed == false
+  int32 remaining_quota = 3;
+}

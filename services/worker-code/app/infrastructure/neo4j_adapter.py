@@ -141,16 +141,26 @@ class Neo4jAdapter:
                         UNWIND $entities AS e
                         MATCH (f:File {source_id: $source_id, path: e.file_path})
                         MERGE (fn:Function {source_id: $source_id, file_path: e.file_path, name: e.name})
-                        ON CREATE SET fn.chunk_id    = e.chunk_id,
-                                      fn.line_start  = e.line_start,
-                                      fn.line_end    = e.line_end,
-                                      fn.summary     = e.summary,
-                                      fn.embedding   = e.embedding
-                        ON MATCH  SET fn.chunk_id    = e.chunk_id,
-                                      fn.line_start  = e.line_start,
-                                      fn.line_end    = e.line_end,
-                                      fn.summary     = coalesce(e.summary, fn.summary),
-                                      fn.embedding   = coalesce(e.embedding, fn.embedding)
+                        ON CREATE SET fn.chunk_id            = e.chunk_id,
+                                      fn.line_start          = e.line_start,
+                                      fn.line_end            = e.line_end,
+                                      fn.summary             = e.summary,
+                                      fn.semantic_archetype  = coalesce(e.semantic_archetype, 'Unknown'),
+                                      fn.inferred_domain     = coalesce(e.inferred_domain, 'Unknown'),
+                                      fn.execution_nature    = coalesce(e.execution_nature, 'Unknown'),
+                                      fn.architectural_layer = coalesce(e.architectural_layer, 'Unknown'),
+                                      fn.structural_health   = coalesce(e.structural_health, 'Unknown'),
+                                      fn.embedding           = e.embedding
+                        ON MATCH  SET fn.chunk_id            = e.chunk_id,
+                                      fn.line_start          = e.line_start,
+                                      fn.line_end            = e.line_end,
+                                      fn.summary             = coalesce(e.summary, fn.summary),
+                                      fn.semantic_archetype  = coalesce(e.semantic_archetype, fn.semantic_archetype),
+                                      fn.inferred_domain     = coalesce(e.inferred_domain, fn.inferred_domain),
+                                      fn.execution_nature    = coalesce(e.execution_nature, fn.execution_nature),
+                                      fn.architectural_layer = coalesce(e.architectural_layer, fn.architectural_layer),
+                                      fn.structural_health   = coalesce(e.structural_health, fn.structural_health),
+                                      fn.embedding           = coalesce(e.embedding, fn.embedding)
                         MERGE (f)-[:DEFINES]->(fn)
                         """,
                         source_id=source_id, entities=functions[i:i+batch_size],
@@ -162,16 +172,26 @@ class Neo4jAdapter:
                         UNWIND $entities AS e
                         MATCH (f:File {source_id: $source_id, path: e.file_path})
                         MERGE (cl:Class {source_id: $source_id, file_path: e.file_path, name: e.name})
-                        ON CREATE SET cl.chunk_id    = e.chunk_id,
-                                      cl.line_start  = e.line_start,
-                                      cl.line_end    = e.line_end,
-                                      cl.summary     = e.summary,
-                                      cl.embedding   = e.embedding
-                        ON MATCH  SET cl.chunk_id    = e.chunk_id,
-                                      cl.line_start  = e.line_start,
-                                      cl.line_end    = e.line_end,
-                                      cl.summary     = coalesce(e.summary, cl.summary),
-                                      cl.embedding   = coalesce(e.embedding, cl.embedding)
+                        ON CREATE SET cl.chunk_id            = e.chunk_id,
+                                      cl.line_start          = e.line_start,
+                                      cl.line_end            = e.line_end,
+                                      cl.summary             = e.summary,
+                                      cl.semantic_archetype  = coalesce(e.semantic_archetype, 'Unknown'),
+                                      cl.inferred_domain     = coalesce(e.inferred_domain, 'Unknown'),
+                                      cl.execution_nature    = coalesce(e.execution_nature, 'Unknown'),
+                                      cl.architectural_layer = coalesce(e.architectural_layer, 'Unknown'),
+                                      cl.structural_health   = coalesce(e.structural_health, 'Unknown'),
+                                      cl.embedding           = e.embedding
+                        ON MATCH  SET cl.chunk_id            = e.chunk_id,
+                                      cl.line_start          = e.line_start,
+                                      cl.line_end            = e.line_end,
+                                      cl.summary             = coalesce(e.summary, cl.summary),
+                                      cl.semantic_archetype  = coalesce(e.semantic_archetype, cl.semantic_archetype),
+                                      cl.inferred_domain     = coalesce(e.inferred_domain, cl.inferred_domain),
+                                      cl.execution_nature    = coalesce(e.execution_nature, cl.execution_nature),
+                                      cl.architectural_layer = coalesce(e.architectural_layer, cl.architectural_layer),
+                                      cl.structural_health   = coalesce(e.structural_health, cl.structural_health),
+                                      cl.embedding           = coalesce(e.embedding, cl.embedding)
                         MERGE (f)-[:DEFINES]->(cl)
                         """,
                         source_id=source_id, entities=classes[i:i+batch_size],

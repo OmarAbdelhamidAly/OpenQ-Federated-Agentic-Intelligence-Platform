@@ -137,6 +137,46 @@ async def get_current_user(
 
     return user
 
+async def get_current_user_ws(token: str) -> User:
+    """Validate token provided via WebSocket query param.
+    Instantiates a temporary DB session to fetch the user.
+    """
+    from app.infrastructure.database.postgres import async_session_factory
+    
+    # Simple Local Strategy
+    try:
+        from app.infrastructure.security import decode_token
+        payload = decode_token(token)
+        user_id: str | None = payload.get("sub")
+        token_type: str | None = payload.get("type")
+        if user_id is None or token_type != "access":
+            raise ValueError("Invalid WS token payload")
+    except Exception as e:
+        # Check Auth0 if local WS token fails
+        if settings.AUTH_STRATEGY == "auth0":
+            try:
+                payload = auth0_validator.validate_token(token)
+                user_id = payload.get("sub")
+            except Exception as auth_err:
+                raise ValueError("Could not validate WS token") from auth_err
+        else:
+            raise ValueError("Could not validate WS token") from e
+
+    async with async_session_factory() as db:
+        from sqlalchemy.orm import selectinload
+        # Query based on Auth0 sub or local UUID
+        if settings.AUTH_STRATEGY == "auth0" and "-" not in str(user_id):
+            result = await db.execute(select(User).where(User.auth0_sub == user_id))
+        else:
+            result = await db.execute(select(User).where(User.id == _uuid.UUID(user_id)))
+            
+        user = result.scalar_one_or_none()
+
+    if user is None:
+        raise ValueError("User not found via WS token")
+
+    return user
+
 
 async def require_admin(
     current_user: Annotated[User, Depends(get_current_user)],

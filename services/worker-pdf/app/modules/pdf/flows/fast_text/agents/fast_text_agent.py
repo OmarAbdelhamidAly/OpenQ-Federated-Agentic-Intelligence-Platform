@@ -31,7 +31,8 @@ async def fast_text_retrieval_agent(state: AnalysisState) -> Dict[str, Any]:
     context_text = ""
     for i, res in enumerate(search_results):
         page = res.payload.get("page_num", "unknown")
-        text = res.payload.get("text", res.payload.get("description", ""))
+        # Extract full parent page text if available, fallback to the chunk's text or standard description
+        text = res.payload.get("parent_text") or res.payload.get("text") or res.payload.get("description", "")
         context_text += f"--- [CHUNK {i+1} | PAGE {page}] ---\n{text}\n\n"
 
     # Synthesis via fast LLM (standard Chat model, no vision needed here)

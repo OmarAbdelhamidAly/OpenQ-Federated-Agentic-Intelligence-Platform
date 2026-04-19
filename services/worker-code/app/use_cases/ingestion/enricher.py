@@ -39,18 +39,63 @@ class CodeEnricher:
             ("user", "Code:\n\n{code}")
         ])
 
+        self.semantic_prompt = ChatPromptTemplate.from_messages([
+            ("system", "You are an elite Software Architecture Ontology Mapper.\n"
+                       "Your objective is to semantically classify an isolated block of code from an unknown repository. "
+                       "The codebase could follow any architectural paradigm (Microservices, Monolithic, Event-Driven, MVC, Clean Architecture) or it could be unstructured Spaghetti code.\n\n"
+                       "Analyze the code and deeply infer its semantic meaning, architectural role, and behavior. "
+                       "Return a STRICT JSON object utilizing the following advanced ontology schema:\n"
+                       "{\n"
+                       "  \"summary\": \"A concise, technical explanation of what this block logic accomplishes.\",\n"
+                       "  \"semantic_archetype\": \"Identify its core architectural nature. (Examples: 'Controller', 'Repository', 'DTO', 'Factory', 'EventPublisher', 'Middleware', 'GodObject', 'SpaghettiScript', 'Orchestrator', 'UI_Component').\",\n"
+                       "  \"inferred_domain\": \"The business context. (Examples: 'Authentication', 'Billing', 'CoreSystem', 'Utility', 'Unknown_Context').\",\n"
+                       "  \"execution_nature\": \"Classify how it handles state. (Examples: 'Pure_Function', 'State_Mutator', 'IO_Bound', 'Event_Driven', 'Procedural_Script').\",\n"
+                       "  \"architectural_layer\": \"Inferred logical layer. (Examples: 'Presentation', 'Application/Service', 'Domain_Logic', 'Persistence', 'Network/API', 'Undefined/Mixed_Spaghetti').\",\n"
+                       "  \"structural_health\": \"A qualitative gauge. (Examples: 'Clean/Cohesive', 'GodObject/HighCoupling', 'Boilerplate', 'Legacy_Script').\"\n"
+                       "}"),
+            ("user", "Code:\n\n{code}")
+        ])
+
     async def summarize(self, code: str) -> Optional[str]:
+        # Backward compatibility: extract only the summary string
+        data = await self.semantic_summarize(code)
+        return data.get("summary") if data else None
+
+    async def semantic_summarize(self, code: str) -> Dict[str, str]:
+        default_ontology = {
+            "summary": "Unknown",
+            "semantic_archetype": "Unknown",
+            "inferred_domain": "Unknown",
+            "execution_nature": "Unknown",
+            "architectural_layer": "Unknown",
+            "structural_health": "Unknown"
+        }
         if not self.enabled or not self.llm or not code.strip():
-            return None
+            return default_ontology
         
         try:
+            import json
             # Truncate very long code to avoid token limits
             truncated_code = code[:5000] 
-            res = await self.summary_prompt.pipe(self.llm).ainvoke({"code": truncated_code})
-            return str(res.content).strip()
+            res = await self.semantic_prompt.pipe(self.llm).ainvoke({"code": truncated_code})
+            
+            content = str(res.content).strip()
+            if "```json" in content:
+                content = content.split("```json")[1].split("```")[0].strip()
+            elif "```" in content:
+                content = content.split("```")[1].split("```")[0].strip()
+                
+            data = json.loads(content)
+            
+            # Ensure all keys exist
+            for key in default_ontology:
+                if key not in data:
+                    data[key] = "Unknown"
+                    
+            return data
         except Exception as e:
-            logger.error("summarization_failed", error=str(e))
-            return None
+            logger.error("semantic_summarization_failed", error=str(e))
+            return default_ontology
 
     async def embed(self, text: str) -> List[float]:
         if not self.embeddings_model or not text:

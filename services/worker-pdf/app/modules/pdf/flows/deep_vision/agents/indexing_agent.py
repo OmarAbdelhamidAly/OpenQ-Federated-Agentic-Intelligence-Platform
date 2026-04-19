@@ -119,29 +119,48 @@ async def _build_dynamic_metadata_with_ai(
     if len(page_descriptions) > 5:
          content_sample += "\n... [Middle pages omitted for summary] ...\n" + "\n---\n".join(page_descriptions[-2:])
 
-    prompt = f"""You are an Expert Document Librarian. 
-    Analyze the following page-by-page visual descriptions of a document and provide a highly descriptive 1-sentence summary that highlights the document's main topic, purpose, and key entities.
+    prompt = f"""You are an Expert Document Librarian and RAG Ontology Mapper.
+    Analyze the following page-by-page visual descriptions of a document and extract semantic classification metadata.
     
     Context Hint: {context_hint or 'None'}
     
     Document Descriptions:
     {content_sample}
     
-    Respond with ONLY the 1-sentence summary. No preamble."""
+    Respond STRICTLY with valid JSON matching this schema:
+    {{
+        "semantic_archetype": "string (e.g. Legal_Contract, Invoice, Technical_Spec, Business_Memo)",
+        "domain_alignment": "string (e.g. Finance, HR, Engineering, Legal, Operations)",
+        "summary": "A highly descriptive 1-sentence summary highlighting the document's main topic and key entities"
+    }}"""
     
     try:
+        import json
         res = await vision_llm.ainvoke(prompt)
-        summary = res.content.strip()
+        text_content = res.content.strip()
+        if text_content.startswith("```json"):
+            text_content = text_content[7:-3]
+        elif text_content.startswith("```"):
+            text_content = text_content[3:-3]
+            
+        data = json.loads(text_content.strip())
+        summary = data.get("summary", "A document analyzed via vision.")
+        semantic_archetype = data.get("semantic_archetype", "Unknown_Archetype")
+        domain_alignment = data.get("domain_alignment", "Unknown_Domain")
     except Exception as e:
-        logger.warning(f"ai_summary_generation_failed, falling back: {str(e)}")
+        logger.warning(f"ai_ontology_generation_failed, falling back: {str(e)}")
         summary = f"A {len(page_descriptions)}-page document analyzed via vision."
+        semantic_archetype = "Unclassified"
+        domain_alignment = "Unknown"
 
     # Get base metadata
     base_meta = _build_static_metadata(context_hint)
     
-    # Inject the smart summary
+    # Inject the smart ontology and summary
     base_meta["dna"]["summary"] = summary
-    base_meta["specialized_fields"]["classification_mode"] = "ai_vision_synthesis"
+    base_meta["dna"]["semantic_archetype"] = semantic_archetype
+    base_meta["dna"]["domain_alignment"] = domain_alignment
+    base_meta["specialized_fields"]["classification_mode"] = "ai_vision_ontology"
     
     return base_meta
 

@@ -112,7 +112,14 @@ async def run_codebase_ingestion(source_id: str) -> None:
         # Step A: Summarize Entities (Functions/Classes)
         async def enrich_entity(e):
             async with semaphore:
-                e["summary"] = await enricher.summarize(e.get("code", ""))
+                enrichment_data = await enricher.semantic_summarize(e.get("code", ""))
+                e["summary"] = enrichment_data.get("summary", "Unknown")
+                e["semantic_archetype"] = enrichment_data.get("semantic_archetype", "Unknown")
+                e["inferred_domain"] = enrichment_data.get("inferred_domain", "Unknown")
+                e["execution_nature"] = enrichment_data.get("execution_nature", "Unknown")
+                e["architectural_layer"] = enrichment_data.get("architectural_layer", "Unknown")
+                e["structural_health"] = enrichment_data.get("structural_health", "Unknown")
+                
                 if e["summary"] and enricher.embeddings_model:
                      e["embedding"] = await enricher.embed(e["summary"])
             # Remove giant code blocks before Neo4j

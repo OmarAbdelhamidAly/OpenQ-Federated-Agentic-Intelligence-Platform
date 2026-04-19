@@ -45,7 +45,9 @@ def _extract_text_from_pdf(file_path: str) -> List[Dict[str, Any]]:
 
 
 def _split_into_chunks(pages: List[Dict[str, Any]], chunk_size: int = 300, overlap: int = 50) -> List[Dict[str, Any]]:
-    """Split page text into overlapping chunks using a simple word-based splitter."""
+    """Split page text into overlapping chunks using a simple word-based splitter.
+    Implements Parent-Child chunking: keeps full page context attached to every small chunk.
+    """
     chunks = []
     for page in pages:
         words = page["text"].split()
@@ -56,10 +58,11 @@ def _split_into_chunks(pages: List[Dict[str, Any]], chunk_size: int = 300, overl
                 continue
             chunks.append({
                 "page_num": page["page_num"],
-                "text": " ".join(chunk_words),
+                "text": " ".join(chunk_words), # Child: High precision for vector similarity
+                "parent_text": page["text"],   # Parent: Deep context for synthesis 
                 "chunk_index": len(chunks),
             })
-    logger.info("chunking_done", total_chunks=len(chunks))
+    logger.info("chunking_done_parent_child", total_chunks=len(chunks))
     return chunks
 
 
@@ -111,7 +114,9 @@ async def fast_indexing_agent(source_id: str) -> Dict[str, Any]:
                     "page_num": chunk["page_num"],
                     "chunk_index": chunk["chunk_index"],
                     "text": chunk["text"],
-                    "is_text_chunk": True
+                    "parent_text": chunk["parent_text"],
+                    "is_text_chunk": True,
+                    "chunk_strategy": "parent_child"
                 }
             )
             

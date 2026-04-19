@@ -8,6 +8,7 @@ from app.modules.code.agents.data_discovery_agent import data_discovery_agent
 from app.modules.code.agents.cypher_generator_agent import cypher_generator_agent
 from app.modules.code.agents.reflection_agent import reflection_agent
 from app.modules.code.agents.insight_agent import insight_agent
+from app.modules.code.agents.evaluation_agent import evaluation_agent
 from app.modules.code.agents.memory_manager_agent import memory_manager_agent
 from app.modules.code.agents.semantic_cache_agent import save_semantic_cache
 from app.modules.code.agents.output_assembler import output_assembler
@@ -75,6 +76,7 @@ def build_code_workflow(checkpointer: Any = None) -> Any:
     graph.add_node("reflection", reflection_agent)
     graph.add_node("execution",  cypher_execution_node)
     graph.add_node("insight",    insight_agent)
+    graph.add_node("evaluator",  evaluation_agent)
     graph.add_node("memory",     memory_manager_agent)
     graph.add_node("save_cache", save_semantic_cache)
     graph.add_node("assembler",  output_assembler)
@@ -103,7 +105,8 @@ def build_code_workflow(checkpointer: Any = None) -> Any:
     graph.add_conditional_edges("execution", route_after_execution)
 
     graph.add_edge("reflection", "generator")
-    graph.add_edge("insight",    "memory")
+    graph.add_edge("insight",    "evaluator")
+    graph.add_edge("evaluator",  "memory")
     graph.add_edge("memory",     "save_cache")
     graph.add_edge("save_cache", "assembler")
     graph.add_edge("assembler",  END)

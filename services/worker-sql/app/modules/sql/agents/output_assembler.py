@@ -24,5 +24,6 @@ async def output_assembler(state: AnalysisState) -> Dict[str, Any]:
         "generated_sql": state.get("generated_sql"),
         "intent": state.get("intent"),
         "relevant_columns": state.get("relevant_columns"),
+        "evaluation_metrics": state.get("evaluation_metrics"),
         "error": state.get("error"),
     }

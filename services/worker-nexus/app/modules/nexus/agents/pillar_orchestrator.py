@@ -27,6 +27,7 @@ from langchain_core.messages import HumanMessage
 from app.infrastructure.neo4j_adapter import Neo4jAdapter
 from app.infrastructure.llm import get_llm
 from app.modules.nexus.utils.episodic_memory import episodic_memory
+from app.modules.nexus.utils.rag_evaluator import get_evaluator
 
 logger = structlog.get_logger(__name__)
 
@@ -44,6 +45,7 @@ class NexusState(TypedDict, total=False):
     meta_context: Dict[str, Any]    # schema/metadata from Postgres
     synthesis: str
     status: str
+    evaluation_metrics: Dict[str, Any]
 
 
 # ─── Node 0: RAG-Fusion & Multi-Query Generation ─────────────────────────────
@@ -384,6 +386,53 @@ CRITICAL RULES:
     }
 
 
+# ─── Node 4: Evaluation ───────────────────────────────────────────────────────
+
+async def evaluation_node(state: NexusState) -> Dict[str, Any]:
+    """Evaluate chunk relevance and attribution for Nexus sub-queries."""
+    logger.info("nexus_evaluation_start", job_id=state.get("job_id"))
+    
+    question = state.get("question", "")
+    graph_ctx = state.get("graph_context", {})
+    entities = graph_ctx.get("entities", [])
+    synthesis = state.get("synthesis", "")
+
+    if not entities or not synthesis:
+        return {}
+
+    try:
+        chunks = []
+        for i, e in enumerate(entities[:30]):
+            text_rep = f"{e.get('type', '')} {e.get('name', '')}: {e.get('summary', '')}"
+            chunks.append({
+                "chunk_id": e.get("id", f"entity_{i}"),
+                "text": text_rep,
+                "element_type": e.get("type", "Entity")
+            })
+
+        evaluator = get_evaluator()
+        eval_result = await evaluator.evaluate_retrieval(
+            query=question,
+            chunks=chunks,
+            response=synthesis,
+        )
+
+        step = {
+            "node": "Nexus RAG Evaluator",
+            "status": f"Evaluation Complete. Cross-Pillar Attribution Rate: {eval_result.attribution_rate:.0%}",
+            "timestamp": str(uuid.uuid4()),
+        }
+
+        return {
+            "evaluation_metrics": eval_result.to_dict(),
+            "thinking_steps": state.get("thinking_steps", []) + [step],
+        }
+
+    except Exception as exc:
+        logger.error("nexus_evaluation_failed", error=str(exc))
+        return {}
+
+
 # ─── Graph Construction ───────────────────────────────────────────────────────
 
 def create_nexus_graph():
@@ -394,12 +443,14 @@ def create_nexus_graph():
     workflow.add_node("gather_context", gather_context_node)
     workflow.add_node("rerank_context", rerank_context_node)
     workflow.add_node("synthesis_layer", synthesis_node)
+    workflow.add_node("evaluation", evaluation_node)
 
     workflow.set_entry_point("query_fusion")
     workflow.add_edge("query_fusion",   "discovery")
     workflow.add_edge("discovery",      "gather_context")
     workflow.add_edge("gather_context", "rerank_context")
     workflow.add_edge("rerank_context", "synthesis_layer")
-    workflow.add_edge("synthesis_layer", END)
+    workflow.add_edge("synthesis_layer", "evaluation")
+    workflow.add_edge("evaluation", END)
 
     return workflow.compile()

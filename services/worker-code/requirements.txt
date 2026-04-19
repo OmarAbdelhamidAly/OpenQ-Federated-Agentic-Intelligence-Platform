@@ -45,3 +45,7 @@ tree-sitter-css>=0.21.0
 # Vector DB (Semantic Cache)
 qdrant-client==1.13.1
 fastembed==0.5.1
+
+# ── RAG Evaluator Dependencies ──
+sentence-transformers>=3.0.0
+torch>=2.2.0

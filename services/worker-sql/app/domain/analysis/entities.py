@@ -103,3 +103,6 @@ class AnalysisState(TypedDict, total=False):
     # ── Progressive Complexity ────────────────────────────────
     complexity_index: int        # Current index in a batch (1-indexed)
     total_pills: int            # Total number of pills in the batch
+
+    # ── RAG Quality ───────────────────────────────────────────────────
+    evaluation_metrics: Optional[Dict[str, Any]]

@@ -23,6 +23,7 @@ from app.modules.sql.agents.verifier_agent import verifier_agent
 from app.modules.sql.agents.reflection_agent import reflection_agent
 from app.modules.sql.agents.semantic_cache_agent import save_semantic_cache
 from app.modules.sql.agents.memory_manager_agent import memory_manager_agent
+from app.modules.sql.agents.evaluation_agent import evaluation_agent
 
 from langgraph.checkpoint.redis import AsyncRedisSaver
 import redis.asyncio as redis
@@ -121,6 +122,7 @@ def build_sql_graph(checkpointer: Any = None) -> Any:
     graph.add_node("insight", insight_agent)
     graph.add_node("verifier", verifier_node)
     graph.add_node("recommendation", recommendation_agent)
+    graph.add_node("evaluator", evaluation_agent)
     graph.add_node("save_cache", save_semantic_cache)
     graph.add_node("memory", memory_manager_agent)
     graph.add_node("output_assembler", output_assembler)
@@ -177,7 +179,8 @@ def build_sql_graph(checkpointer: Any = None) -> Any:
     graph.add_edge("visualization", "insight")
     graph.add_edge("insight", "verifier")
     graph.add_edge("verifier", "recommendation")
-    graph.add_edge("recommendation", "save_cache")
+    graph.add_edge("recommendation", "evaluator")
+    graph.add_edge("evaluator", "save_cache")
     graph.add_edge("save_cache", "memory")
     graph.add_edge("memory", "output_assembler")
     graph.add_edge("output_assembler", END)

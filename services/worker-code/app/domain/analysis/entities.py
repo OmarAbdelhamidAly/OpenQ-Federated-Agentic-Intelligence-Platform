@@ -38,3 +38,6 @@ class CodeAnalysisState(TypedDict):
     error:              Optional[str]
     retry_count:        Annotated[int, operator.add]   # LangGraph auto-adds deltas
     reflection_context: Optional[str]
+
+    # ── RAG Quality ───────────────────────────────────────────────────
+    evaluation_metrics: Optional[Dict[str, Any]]

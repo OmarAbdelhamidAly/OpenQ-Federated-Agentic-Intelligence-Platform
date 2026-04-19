@@ -23,5 +23,6 @@ async def output_assembler(state: AnalysisState) -> Dict[str, Any]:
         "intent": state.get("intent"),
         "relevant_columns": state.get("relevant_columns"),
         "visual_context": state.get("visual_context", []),
+        "evaluation_metrics": state.get("evaluation_metrics"),
         "error": state.get("error"),
     }

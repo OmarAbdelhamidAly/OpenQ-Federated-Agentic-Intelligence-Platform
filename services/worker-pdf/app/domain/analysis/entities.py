@@ -104,8 +104,12 @@ class AnalysisState(TypedDict, total=False):
     
     # ── PDF Orchestration ────────────────────────────────────
     analysis_mode: str          # "fast_text" | "hybrid" | "deep_vision"
+    doc_strategy: str           # "fast" | "hi_res" | "ocr_only" | "auto"
     route: str                  # "greeting" | "query"
     reflection_needed: bool
     verified: bool
     search_results: Any         # The raw Qdrant search results
     page_nums: List[int]
+
+    # ── RAG Quality Evaluation ───────────────────────────────
+    evaluation_metrics: Optional[Dict[str, Any]]  # Chunk Attribution / Utilization / Relevance

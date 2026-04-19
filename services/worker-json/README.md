@@ -2,11 +2,11 @@
 
 # 📄 Worker JSON (Document Intelligence Pillar)
 
-**NoSQL Aggregation and Qdrant Semantic RAG Integration**
+**NoSQL Aggregation, Semantic Nesting Decomposition & Hybrid RAG**
 
 [![Python Tools](https://img.shields.io/badge/Python-3.11+-3776AB?logo=python&logoColor=white)](https://python.org)
-[![Celery Tasks](https://img.shields.io/badge/Celery-5.4-37814A?logo=celery&logoColor=white)](https://docs.celeryq.dev)
 [![MongoDB](https://img.shields.io/badge/MongoDB-Document%20Store-47A248?logo=mongodb&logoColor=white)](https://mongodb.com)
+[![Qdrant](https://img.shields.io/badge/Qdrant-Semantic_RAG-018BFF?logo=qdrant&logoColor=white)](https://qdrant.tech)
 
 </div>
 
@@ -14,39 +14,43 @@
 
 ## 🎯 Overview
 
-The `worker-json` service handles complex JSON log files and NoSQL document stores schemas within OpenQ. It excels in parsing highly nested event histories and flattening semantic arrays natively.
-
-It seamlessly blends dual capabilities: exact boolean filtering powered by **MongoDB aggregations** and fuzzy conceptual matching powered by **Qdrant Vector Database** RAG embeddings (768d).
+The `worker-json` service is the NoSQL intelligence pillar of OpenQ. It is specifically designed to handle highly nested, semi-structured JSON log files and event streams. It bridges the gap between precise database filtering and conceptual semantic retrieval by implementing a **Dual-Tier RAG** architecture using MongoDB and Qdrant.
 
 ---
 
-## 🏗️ Architecture Design
+## 🏗️ Architecture: The 10-Node JSON Pipeline
 
-Operates on a **10-Node Directed Cyclic StateGraph**.
+The service utilizes a directed cyclic StateGraph to process complex document queries:
 
-- **Semantic Decomposition**: Automatically flattens excessively nested JSON strings inside the document arrays before inserting them accurately into independent MongoDB collections.
-- **Data Discovery & Guardrails**: Standard checks, isolating schema shapes safely without leaking PII variables downstream.
-- **Analysis State**: Given a natural language query, it invokes dual-chain actions:
-  - Drafting raw MongoDB PyMongo aggregation pipelines arrays `[{"$match": ...}, {"$group": ...}]`.
-  - Hitting Qdrant for semantic similarity searches on vast text event blocks.
-- **Reflection Check**: Error corrections on MongoDB Pipeline syntaxes.
+### 1. Semantic Decomposition
+- **Flattening Engine:** Automatically decomposes excessively nested JSON objects and arrays into semantic clusters before ingestion.
+- **Normalization:** Ensures consistency across disparate JSON schemas within the same collection.
+
+### 2. Dual-Tier Search Strategy
+Given a natural language query, the agent orchestrates two parallel actions:
+- **Tier 1 (Exact):** Generates optimized **PyMongo Aggregation Pipelines** (`$match`, `$group`, `$facet`) to fetch exact numerical and categorical data from MongoDB.
+- **Tier 2 (Fuzzy):** Hits **Qdrant Vector DB** for semantic similarity searches on text-rich event blobs or log descriptions.
+
+### 3. Reflection & Synthesis
+- **Aggregation Repair:** If a MongoDB pipeline fails or yields empty results, the **Reflection Agent** analyzes the schema and repairs the stage constraints.
+- **Multi-Modal Insight:** Combines exact statistical data with semantic findings to generate a comprehensive business report.
 
 ---
 
-## ⚙️ Environment Configuration
+## ⚙️ Configuration
 
 | Variable | Description |
 |---|---|
-| `REDIS_URL` | Task dispatch cluster and async backend storage. |
-| `DATABASE_URL` | Internal metadata system to transition job metrics. |
-| `MONGO_URI` | The connection string mapping to the JSON document persistence instance. |
-| `QDRANT_URL` | Trajectory to Vector Database deployment (default `http://qdrant:6333`). |
-| `LLM_MODEL` | Standard processing model default parameters. |
+| `MONGO_URI` | Connection to the MongoDB cluster. |
+| `QDRANT_URL` | Vector database endpoint for JSON embeddings. |
+| `LLM_MODEL_JSON` | Model used for aggregation pipeline generation. |
 
 ---
 
-## 🚀 Tasks & Queues mapping
+## 🚀 Queues & Tasks
 
-| Task | Queue | Details |
+| Task | Queue | Goal |
 |---|---|---|
-| `pillar_task` | `pillar.json` | JSON query job ID parameter mapping. |
+| `pillar_task` | `pillar.json` | Orchestrates the 10-node JSON reasoning graph. |
+
+*OpenQ JSON Intelligence: Structured insights from semi-structured data.*

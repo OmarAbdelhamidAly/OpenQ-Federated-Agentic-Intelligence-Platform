@@ -39,12 +39,13 @@ A user connects a data source, types a natural-language question, and the system
 
 | Source | Pillar | Connection Method | Notes |
 |---|---|---|---|
-| **Universal Text / CSV / PDF** | `worker-pdf` | File upload | Consolidates Unstructured text, PDFs, and flat files. Native multimodal via Gemini 2.0 Flash Vision. |
-| **PostgreSQL / MySQL** | `worker-sql` | Encrypted connection string | AES-256 credentials at rest. 12-node StateGraph flow. |
-| **JSON** | `worker-json` | File upload | Structured event / log data via MongoDB + Qdrant |
-| **Source Code** | `worker-code` | Repository path / Neo4j | AST-mapped codebase Q&A via Cypher |
-| **Company Tree** | `corporate` | Hierarchy / Org Mapping | 20-level Materialized Path Org-Tree Management |
-| **Multi-pillar** | `worker-nexus` | Any combination above | Federated cross-domain strategic intelligence |
+| **Universal Text / CSV / PDF** | `worker-pdf` | File upload | Multimodal Vision decoding + GraphRAG Semantic Weaver. |
+| **PostgreSQL / MySQL** | `worker-sql` | Encrypted connection string | Golden SQL memory + HITL + GDS-Aware Retrieval. |
+| **JSON** | `worker-json` | File upload | Semantic flattening + NoSQL/Vector Hybrid Search. |
+| **Source Code** | `worker-code` | Neo4j GDS | AST-parsed GDS Weaver (Louvain Modules & PageRank). |
+| **Audio** | `worker-audio` | Gemini Flash | Native Multimodal Transcription + Fast Retrieval (Skip-Indexing). |
+| **Multi-pillar** | `worker-nexus` | Federated Graph | Strategic Orchestrator of the GraphRAG Pillar Federation. |
+
 
 ---
 
@@ -58,8 +59,10 @@ A user connects a data source, types a natural-language question, and the system
 | 🚀 **WebSockets & gRPC** | Real-time streaming of LLM `thinking_steps` via Redis Pub/Sub WebSockets (Zero REST Polling). |
 | 🔁 **Zero-Row Reflection** | SQL queries returning 0 rows trigger automatic case-mismatch detection against `low_cardinality_values` and self-correcting retry (max 3 iterations, no cold restart) |
 | 👁️ **Human-in-the-Loop (HITL)** | SQL queries against live databases pause at `interrupt_after=["human_approval"]`. Full LangGraph state serialized to Redis via `AsyncRedisSaver` — survives worker restarts, pod evictions, cluster reboots |
-| 🧬 **Hybrid Fusion** | SQL results enriched with PDF context via Gemini 2.0 Flash Multimodal — pages rendered as images, semantically retrieved from Qdrant, synthesized into a unified insight |
-| 🕸️ **Knowledge Graph Intelligence** | All pillars (code, audio, image, JSON, SQL) index extracted entities into Neo4j. `worker-nexus` forges cross-pillar relationships and synthesizes a 5-pillar Executive Strategic Intelligence Report |
+| 🧬 **Hybrid Retrieval Matrix** | SQL results enriched with PDF/Audio context via parallel Vector (Qdrant) and Graph (Neo4j) search. Uses Text-to-Cypher to traverse relationships that cross-pillar reasoning flows require. |
+| 🧬 **Strategic GraphRAG** | Transitioned all unstructured pillars (Audio, Code, PDF) to a native **Neo4j GDS** backend. Uses Louvain communities and PageRank centrality to discover semantic hierarchies and architectural "Logical Hearts" autonomously. |
+| 🧬 **Semantic Weaver** | Post-indexing background process that "weaves" the knowledge graph by identifying k-NN similarities, clustering thematic communities, and generating hierarchical summaries for global document reasoning. |
+
 | 🛡️ **3-Layer SQL Guardrails** | Layer 1: SELECT-only allowlist · Layer 2: DML/DDL regex blocklist · Layer 3: LLM semantic policy enforcement (tenant-scoped, natural-language rules) |
 | 🏢 **Multi-Tenant Isolation** | Single DB, `tenant_id` scoped on every SQLAlchemy query. Enforced at the `get_current_user` dependency level — cannot be bypassed |
 | ⚡ **Auto-Analysis on Upload** | 5 pre-generated analyses computed in background on upload — users see instant insights on first open, zero wait |

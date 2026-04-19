@@ -88,6 +88,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         await _safe_exec("ALTER TABLE documents ADD COLUMN IF NOT EXISTS context_hint TEXT NULL")
         
         await _safe_exec("ALTER TABLE analysis_results ADD COLUMN IF NOT EXISTS embedding JSON NULL")
+        await _safe_exec("ALTER TABLE analysis_results ADD COLUMN IF NOT EXISTS evaluation_metrics JSON NULL")
         
         # Try to add the FK reference safely without Postgres logging errors if it exists
         await _safe_exec("""
@@ -128,7 +129,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     except Exception as exc:
         logger.error("db_sync_critical_failure", error=str(exc))
     finally:
-        # Best-effort unlock (no harm if we never acquired it).
+        # Best-effort unlock
         try:
             ADVISORY_LOCK_KEY = 987654321
             async with engine.begin() as conn:
@@ -136,8 +137,47 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         except Exception:
             pass
 
+    import asyncio
+    collector_task = asyncio.create_task(update_rag_metrics_loop())
+
     yield
+
+    collector_task.cancel()
     logger.info("application_shutting_down")
+
+
+from prometheus_client import Gauge
+
+# Global RAG Quality Gauges
+rag_relevance_gauge = Gauge("openq_rag_avg_relevance", "Average relevance of evaluated RAG queries.")
+rag_utilization_gauge = Gauge("openq_rag_avg_utilization", "Average utilization rate of fetched chunks.")
+rag_attribution_gauge = Gauge("openq_rag_attribution_rate", "Attribution rate for the Universal RAG pipeline.")
+
+async def update_rag_metrics_loop():
+    from app.infrastructure.database.postgres import async_session_factory
+    from sqlalchemy import text
+    import asyncio
+    while True:
+        try:
+            async with async_session_factory() as db:
+                res = await db.execute(text("""
+                    SELECT 
+                        AVG(CAST(NULLIF(evaluation_metrics->>'avg_relevance', 'NaN') AS FLOAT)),
+                        AVG(CAST(NULLIF(evaluation_metrics->>'avg_utilization', 'NaN') AS FLOAT)),
+                        AVG(CAST(NULLIF(evaluation_metrics->>'attribution_rate', 'NaN') AS FLOAT))
+                    FROM analysis_results 
+                    WHERE evaluation_metrics IS NOT NULL
+                """))
+                row = res.fetchone()
+                if row and row[0] is not None:
+                    rag_relevance_gauge.set(row[0])
+                    rag_utilization_gauge.set(row[1])
+                    rag_attribution_gauge.set(row[2])
+        except Exception as e:
+            logger.error("rag_metrics_update_error", error=str(e))
+        
+        await asyncio.sleep(30)
+
 
 
 def create_app() -> FastAPI:

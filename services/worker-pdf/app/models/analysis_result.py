@@ -45,6 +45,10 @@ class AnalysisResult(Base):
         JSON, nullable=True
     )  # Vector embedding for historical memory search
 
+    evaluation_metrics: Mapped[Optional[Dict[str, Any]]] = mapped_column(
+        JSON, nullable=True
+    )  # RAG metrics (relevance, attribution, utilization)
+
     visual_context: Mapped[Optional[List[Dict[str, Any]]]] = mapped_column(
         JSON, nullable=True
     )

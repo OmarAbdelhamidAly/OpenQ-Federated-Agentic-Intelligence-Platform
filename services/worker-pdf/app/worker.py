@@ -181,6 +181,7 @@ async def _execute_pillar(job_id: str) -> dict:
                 recommendations_json=res_data.get("recommendations"),
                 follow_up_suggestions=res_data.get("follow_up_suggestions"),
                 visual_context=res_data.get("visual_context"),
+                evaluation_metrics=res_data.get("evaluation_metrics"),
             )
             stmt = stmt.on_conflict_do_update(
                 index_elements=['job_id'],
@@ -191,6 +192,7 @@ async def _execute_pillar(job_id: str) -> dict:
                     'recommendations_json': stmt.excluded.recommendations_json,
                     'follow_up_suggestions': stmt.excluded.follow_up_suggestions,
                     'visual_context': stmt.excluded.visual_context,
+                    'evaluation_metrics': stmt.excluded.evaluation_metrics,
                 }
             )
             await db.execute(stmt)

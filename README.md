@@ -10,7 +10,7 @@
 [![Celery](https://img.shields.io/badge/Celery-5.4-37814A?logo=celery&logoColor=white)](https://docs.celeryq.dev)
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-4169E1?logo=postgresql&logoColor=white)](https://postgresql.org)
 [![Redis](https://img.shields.io/badge/Redis-Broker%20%2B%20HITL%20Checkpoint-DC382D?logo=redis&logoColor=white)](https://redis.io)
-[![Docker](https://img.shields.io/badge/Docker-25%20Containers-2496ED?logo=docker&logoColor=white)](https://docker.com)
+[![Docker](https://img.shields.io/badge/Docker-21%20Containers-2496ED?logo=docker&logoColor=white)](https://docker.com)
 [![Gemini](https://img.shields.io/badge/Gemini-2.0--Flash%20Vision-4285F4?logo=google-gemini&logoColor=white)](https://deepmind.google/technologies/gemini/)
 [![Neo4j](https://img.shields.io/badge/Neo4j-Knowledge%20Graph-018BFF?logo=neo4j&logoColor=white)](https://neo4j.com)
 [![Qdrant](https://img.shields.io/badge/Qdrant-Vector%20RAG-4F46E5)](https://qdrant.tech)
@@ -39,14 +39,10 @@ A user connects a data source, types a natural-language question, and the system
 
 | Source | Pillar | Connection Method | Notes |
 |---|---|---|---|
-| **CSV / XLSX / SQLite** | `worker-csv` | File upload | Auto-profiled on upload |
-| **PostgreSQL / MySQL** | `worker-sql` | Encrypted connection string | AES-256 credentials at rest |
+| **Universal Text / CSV / PDF** | `worker-pdf` | File upload | Consolidates Unstructured text, PDFs, and flat files. Native multimodal via Gemini 2.0 Flash Vision. |
+| **PostgreSQL / MySQL** | `worker-sql` | Encrypted connection string | AES-256 credentials at rest. 12-node StateGraph flow. |
 | **JSON** | `worker-json` | File upload | Structured event / log data via MongoDB + Qdrant |
-| **PDF** | `worker-pdf` | File upload | Native multimodal via Gemini 2.0 Flash Vision |
 | **Source Code** | `worker-code` | Repository path / Neo4j | AST-mapped codebase Q&A via Cypher |
-| **Audio** | `worker-audio` | File upload (WAV/MP3/M4A) | Transcription + entity extraction via Gemini 1.5 Flash |
-| **Image** | `worker-image` | File upload | Visual analysis via Gemini multimodal |
-| **Video** | `worker-video` | File upload | Scene & entity extraction via Gemini multimodal |
 | **Company Tree** | `corporate` | Hierarchy / Org Mapping | 20-level Materialized Path Org-Tree Management |
 | **Multi-pillar** | `worker-nexus` | Any combination above | Federated cross-domain strategic intelligence |
 
@@ -57,8 +53,9 @@ A user connects a data source, types a natural-language question, and the system
 | Feature | Description |
 |---|---|
 | 🔀 **Vector Semantic Routing** | SQL/DB schema discovery bypassing regex: `FastEmbed` and Cosine Similarity route queries to exact schemas via `worker-sql`. |
-| 🧬 **Multi-Query RAG-Fusion** | The `worker-nexus` orchestrator breaks down complex questions into sub-queries and uses a **Cross-Encoder Re-Ranker** to filter noise and prevent hallucinations. |
-| 🚀 **WebSockets & gRPC** | Real-time streaming of LLM `thinking_steps` via Redis Pub/Sub WebSockets (Zero REST Polling), and sub-millisecond IAM verification via internal gRPC Protobufs. |
+| 🧬 **Multi-Query RAG-Fusion** | The `worker-nexus` orchestrator breaks down complex questions into sub-queries and uses a **Cross-Encoder Re-Ranker** to filter noise. |
+| 🛡️ **Native RAG Quality Evaluator** | Completely free, local, self-evaluating metrics. Zero-cost dual small language models (`ms-marco` + NLI) measure *Avg Relevance*, *Utilization*, and *Attribution* natively exposed to **Prometheus/Grafana** dashboards. |
+| 🚀 **WebSockets & gRPC** | Real-time streaming of LLM `thinking_steps` via Redis Pub/Sub WebSockets (Zero REST Polling). |
 | 🔁 **Zero-Row Reflection** | SQL queries returning 0 rows trigger automatic case-mismatch detection against `low_cardinality_values` and self-correcting retry (max 3 iterations, no cold restart) |
 | 👁️ **Human-in-the-Loop (HITL)** | SQL queries against live databases pause at `interrupt_after=["human_approval"]`. Full LangGraph state serialized to Redis via `AsyncRedisSaver` — survives worker restarts, pod evictions, cluster reboots |
 | 🧬 **Hybrid Fusion** | SQL results enriched with PDF context via Gemini 2.0 Flash Multimodal — pages rendered as images, semantically retrieved from Qdrant, synthesized into a unified insight |
@@ -77,7 +74,7 @@ A user connects a data source, types a natural-language question, and the system
 
 ## 🏗️ System Architecture
 
-The platform is a **5-layer microservices stack** with **25 containers**, orchestrated by Docker Compose (Kubernetes-ready for production):
+The platform is a **5-layer microservices stack** with **21 containers**, orchestrated by Docker Compose (Kubernetes-ready for production):
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
@@ -100,16 +97,16 @@ The platform is a **5-layer microservices stack** with **25 containers**, orches
 │  Guardrail Agent — LLM policy enforcement, PII detection                │
 └──────────────────────────────────┬──────────────────────────────────────┘
                                    │ Celery tasks by type
-       ┌────────┬────────┬─────────┼─────────┬────────┬────────┬────────┐
-       ▼        ▼        ▼         ▼         ▼        ▼        ▼        ▼
-┌──────────┐ ┌──────┐ ┌──────┐ ┌──────┐ ┌──────┐ ┌──────┐ ┌──────┐ ┌──────┐
-│LAYER 3   │ │      │ │      │ │      │ │      │ │      │ │      │ │      │
-│worker-sql│ │ csv  │ │ json │ │ pdf  │ │ code │ │audio │ │image │ │video │
-│          │ │      │ │      │ │      │ │      │ │      │ │      │ │      │
-│12-node   │ │11-nd │ │10-nd │ │10-nd │ │8-nd  │ │direct│ │direct│ │direct│
-│Cyclic    │ │Cyclic│ │Cyclic│ │Orch. │ │Cyclic│ │Gemini│ │Gemini│ │Gemini│
-│StateGraph│ │      │ │      │ │      │ │      │ │+Neo4j│ │+Neo4j│ │+Neo4j│
-└──────────┘ └──────┘ └──────┘ └──────┘ └──────┘ └──────┘ └──────┘ └──────┘
+       ┌────────┬────────┬───────┼─────────┬────────┐
+       ▼        ▼        ▼       ▼         ▼        ▼
+┌──────────┐ ┌──────┐ ┌──────┐ ┌───────┐ ┌──────┐ ┌──────┐
+│LAYER 3   │ │      │ │      │ │       │ │      │ │      │
+│worker-sql│ │ api  │ │ json │ │ doc   │ │ code │ │nexus │
+│          │ │      │ │      │ │(pdf/  │ │      │ │      │
+│12-node   │ │      │ │10-nd │ │ csv)  │ │8-nd  │ │Multi-│
+│Cyclic    │ │      │ │Cyclic│ │ Univ. │ │Cyclic│ │Pillar│
+│StateGraph│ │      │ │      │ │ Graph │ │      │ │      │
+└──────────┘ └──────┘ └──────┘ └───────┘ └──────┘ └──────┘
                                    │
                    ┌───────────────┘
                    ▼
@@ -182,36 +179,19 @@ OpenQ/
 │   │       ├── agents/           # data_discovery · analysis_generator · reflection
 │   │       │                     # human_approval · execution · hybrid_fusion
 │   │       │                     # visualization · insight · verifier
-│   │       │                     # recommendation · save_cache · output_assembler
+│   │       │                     # recommendation · save_cache · evaluation
+│   │       │                     # output_assembler
 │   │       ├── tools/            # run_sql_query · sql_schema_discovery
-│   │       └── utils/            # golden_sql · insight_memory · schema_mapper
-│   │                             # schema_selector · sql_validator
-│   │
-│   ├── worker-csv/               # Layer 3: CSV/flat-file pipeline (11 nodes)
-│   │   └── app/modules/csv/
-│   │       ├── workflow.py       # LangGraph CSV graph
-│   │       ├── agents/           # data_discovery · data_cleaning · guardrail
-│   │       │                     # analysis · reflection · visualization
-│   │       │                     # insight · verifier · recommendation
-│   │       │                     # output_assembler · save_cache
-│   │       └── tools/            # compute_trend · compute_ranking
-│   │                             # compute_correlation · profile_dataframe
-│   │                             # clean_dataframe
+│   │       └── utils/            # golden_sql · insight_memory · rag_evaluator
 │   │
 │   ├── worker-json/              # Layer 3: JSON pipeline (10 nodes, MongoDB + Qdrant)
-│   ├── worker-pdf/               # Layer 3: PDF Multimodal pipeline (10 nodes, Gemini 2.0 Flash)
+│   ├── worker-pdf/               # Layer 3: Universal Document (Unstructured Text & Multimodal PDF)
 │   │
 │   ├── worker-code/              # Layer 3: Codebase AST pipeline (8 nodes, Neo4j)
 │   │   └── app/modules/code/
 │   │       ├── workflow.py       # LangGraph: discovery → generator → execution
-│   │       │                     # → insight → memory → save_cache → assembler
-│   │       └── agents/           # data_discovery · cypher_generator · reflection
-│   │                             # execution · insight · memory_manager
-│   │                             # semantic_cache · output_assembler
-│   │
-│   ├── worker-audio/             # Layer 3: Audio multimodal (Gemini 1.5 Flash + Neo4j)
-│   ├── worker-image/             # Layer 3: Image analysis (Gemini multimodal + Neo4j)
-│   ├── worker-video/             # Layer 3: Video analysis (Gemini multimodal + Neo4j)
+│   │       │                     # → insight → memory → evaluator → save_cache
+│   │       └── agents/           # data_discovery · cypher_generator · evaluation
 │   │
 │   ├── worker-nexus/             # Layer 3: Federated multi-pillar orchestrator
 │   │   └── app/modules/nexus/

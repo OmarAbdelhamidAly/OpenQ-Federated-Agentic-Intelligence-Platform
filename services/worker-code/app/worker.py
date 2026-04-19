@@ -139,14 +139,24 @@ async def _execute_pillar(job_id: str):
             )
             
             # Upsert into AnalysisResult table
+            eval_metrics = result.get("evaluation_metrics")
+            eval_metrics_json = json.dumps(eval_metrics) if eval_metrics else None
+
             await db.execute(
                 text("""
-                INSERT INTO analysis_results (job_id, insight_report, exec_summary) 
-                VALUES (:job_id, :insight, :exec_summary)
+                INSERT INTO analysis_results (job_id, insight_report, exec_summary, evaluation_metrics) 
+                VALUES (:job_id, :insight, :exec_summary, :eval_metrics)
                 ON CONFLICT (job_id) DO UPDATE SET 
-                insight_report = EXCLUDED.insight_report, exec_summary = EXCLUDED.exec_summary
+                insight_report = EXCLUDED.insight_report, 
+                exec_summary = EXCLUDED.exec_summary,
+                evaluation_metrics = EXCLUDED.evaluation_metrics
                 """),
-                {"job_id": job_id, "insight": result.get("insight_report"), "exec_summary": result.get("executive_summary")}
+                {
+                    "job_id": job_id, 
+                    "insight": result.get("insight_report"), 
+                    "exec_summary": result.get("executive_summary"),
+                    "eval_metrics": eval_metrics_json
+                }
             )
             
             await db.commit()

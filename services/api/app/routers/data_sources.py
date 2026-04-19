@@ -1,4 +1,4 @@
-"""Data source router — upload CSV/XLSX/SQLite, connect SQL, list, delete."""
+"""Data source router — upload CSV/XLSX/SQLite, connect SQL, Documents (PDF/DOCX/PPTX/etc.), and more."""
 
 
 
@@ -234,17 +234,33 @@ async def upload_file(
         )
 
     ext = os.path.splitext(safe_name)[1].lower()
+
+    # ── Universal Document types (routed to pillar.pdf Universal pipeline)
+    UNIVERSAL_DOCUMENT_EXTS = {
+        ".pdf", ".docx", ".doc", ".odt", ".rtf",
+        ".pptx", ".ppt",
+        ".epub", ".html", ".htm", ".xml",
+        ".eml", ".msg",
+        ".txt", ".md",
+    }
+
     ALLOWED = (
-        ".csv", ".xlsx", ".sqlite", ".db", ".sql", ".pdf", ".json", ".zip",
+        # Universal Documents
+        *UNIVERSAL_DOCUMENT_EXTS,
+        # Structured data
+        ".csv", ".xlsx", ".sqlite", ".db", ".sql", ".json", ".tsv",
+        # Code
+        ".zip", ".py", ".js", ".ts", ".env", ".java",
+        ".cpp", ".h", ".go", ".sh", ".yaml", ".yml",
+        # Media
         ".jpg", ".jpeg", ".png", ".webp",
         ".mp3", ".wav", ".m4a", ".ogg",
-        ".mp4", ".mov", ".avi", ".mkv", ".txt",
-        ".py", ".js", ".ts", ".env", ".java", ".cpp", ".h", ".go", ".sh", ".yaml", ".yml", ".md"
+        ".mp4", ".mov", ".avi", ".mkv",
     )
     if ext not in ALLOWED:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Supported file types: {', '.join(ALLOWED)}",
+            detail=f"Supported file types: {', '.join(sorted(ALLOWED))}",
         )
 
     # Enforce upload size limit BEFORE writing to disk
@@ -264,20 +280,23 @@ async def upload_file(
     tenant_id_str = str(admin.tenant_id)
     file_path = await save_upload_file(file, tenant_id_str)
 
-    # ── PDF/Text Document ────────────────────────────────────────────────────
-    if ext in (".pdf", ".txt", ".md"):
-        # Base schema for PDF
+    # ── Universal Documents (PDF, DOCX, PPTX, TXT, MD, HTML, EPUB, EML, ODT, RTF, etc.) ───
+    if ext in UNIVERSAL_DOCUMENT_EXTS:
+        # Use extension as display type (e.g. "docx", "pptx", "pdf")
+        display_type = ext.lstrip(".")
+
         schema_json = {
-            "page_count": 0,
-            "total_patches": 0,
-            "source_type": "pdf",
-            "indexing_mode": indexing_mode
+            "source_type": display_type,
+            "file_extension": ext,
+            "indexing_mode": indexing_mode or "fast_text",
+            "progress": 0,
+            "current_step": "Queued for Universal Document Intelligence pipeline...",
         }
-        
+
         source = DataSource(
             id=uuid.uuid4(),
             tenant_id=admin.tenant_id,
-            type="pdf",
+            type=display_type,
             name=file.filename,
             file_path=file_path,
             context_hint=context_hint,
@@ -289,15 +308,21 @@ async def upload_file(
         await db.refresh(source)
 
         logger.info(
-            "pdf_source_uploaded",
+            "universal_doc_source_uploaded",
             tenant_id=tenant_id_str,
             user_id=str(admin.id),
             source_id=str(source.id),
             filename=file.filename,
+            ext=ext,
         )
         from app.worker import celery_app
-        celery_app.send_task("process_source_indexing", args=[str(source.id)], queue="knowledge")
+        celery_app.send_task(
+            "process_source_indexing",
+            args=[str(source.id)],
+            queue="knowledge",
+        )
         return DataSourceResponse.model_validate(source)
+
 
     # ── Codebase (Individual Files) ──────────────────────────────────────────
     if ext in (".py", ".js", ".ts", ".env", ".java", ".cpp", ".h", ".go", ".sh", ".yaml", ".yml"):

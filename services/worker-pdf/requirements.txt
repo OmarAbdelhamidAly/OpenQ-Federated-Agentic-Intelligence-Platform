@@ -68,9 +68,23 @@ slowapi==0.1.9
 # Logging
 structlog==24.4.0
 
-# Fast Text RAG
+# Fast Text RAG (kept as fallback)
 PyMuPDF==1.25.1
 
 # Neo4j Graph DB
 neo4j==5.21.0
+
+# ── Universal Document Intelligence ───────────────────────────────────────────
+# Unstructured.io — intelligent element-aware document parsing
+# Supports: PDF, DOCX, PPTX, XLSX, HTML, EPUB, EML, MSG, TXT, MD, RTF, ODT,
+#           CSV, TSV, PNG, JPG (via OCR strategy)
+unstructured[pdf,docx,pptx,xlsx,md,html,epub,eml,odt,rtf,csv,tsv]>=0.16.0
+
+# Required by Unstructured for DOCX/PPTX parsing
+python-docx>=1.1.2
+python-pptx>=1.0.0
+
+# MIME type detection — used by Unstructured auto-partitioner
+python-magic-bin>=0.4.14; sys_platform == 'win32'
+python-magic>=0.4.27; sys_platform != 'win32'
 

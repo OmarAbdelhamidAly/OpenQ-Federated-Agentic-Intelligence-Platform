@@ -1,5 +1,6 @@
-# ── Celery Worker Dockerfile ──────────────────────────────────
-# Shares the same base as the API but with a different entrypoint
+# ── Universal Document Intelligence Worker Dockerfile ────────────────────────
+# Supports all document types via Unstructured.io:
+# PDF, DOCX, PPTX, XLSX, HTML, EPUB, EML, TXT, MD, PNG, JPG, etc.
 FROM python:3.11-slim AS builder
 
 # Force HTTPS mirrors to bypass ISP HTTP redirect issues
@@ -17,6 +18,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends --fix-missing \
     libffi-dev \
     libpq-dev \
     shared-mime-info \
+    # Unstructured.io dependencies (builder stage)
+    libmagic1 \
+    libmagic-dev \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /build
@@ -40,7 +44,17 @@ RUN apt-get update && apt-get install -y --no-install-recommends --fix-missing \
     libpq5 \
     shared-mime-info \
     curl \
+    # PDF rendering (pdf2image & Unstructured PDF strategy)
     poppler-utils \
+    # OCR engine (Unstructured ocr_only + hybrid strategy)
+    tesseract-ocr \
+    tesseract-ocr-ara \
+    tesseract-ocr-eng \
+    # MIME type detection (python-magic)
+    libmagic1 \
+    # Font support for PPTX/DOCX rendering
+    fonts-liberation \
+    fonts-dejavu-core \
     && rm -rf /var/lib/apt/lists/*
 
 # Create non-root user
@@ -73,4 +87,5 @@ USER appuser
 CMD ["celery", "-A", "app.worker:celery_app", "worker", \
     "--loglevel=info", \
     "--concurrency=4", \
+    "--queues=pillar.pdf,pillar.docx,pillar.pptx,pillar.document,knowledge", \
     "--prefetch-multiplier=1"]

@@ -1,4 +1,10 @@
-"""Celery worker — PDF/Knowledge Base Specialized Pillar."""
+"""Celery worker — Universal Document Intelligence Pillar.
+
+Supported document types for indexing and analysis:
+  PDF, DOCX, DOC, ODT, PPTX, PPT, XLSX, CSV, TSV,
+  EML, MSG, RTF, EPUB, HTML, XML, TXT, MD,
+  PNG, JPG, JPEG (image-only documents via OCR)
+"""
 import asyncio
 import uuid
 import structlog
@@ -64,10 +70,37 @@ async def _execute_pillar(job_id: str) -> dict:
             source = ds_res.scalar_one_or_none()
             source_type = source.type if source else "pdf"
 
+            # Map source type to Unstructured strategy and analysis mode
+            # This ensures the same strategy used at index time is used at query time
+            _TYPE_TO_INFO = {
+                "pdf": {"mode": "deep_vision", "strategy": "auto"},
+                "docx": {"mode": "fast_text",  "strategy": "fast"},
+                "doc":  {"mode": "fast_text",  "strategy": "fast"},
+                "odt":  {"mode": "fast_text",  "strategy": "fast"},
+                "pptx": {"mode": "fast_text",  "strategy": "auto"},
+                "ppt":  {"mode": "fast_text",  "strategy": "auto"},
+                "xlsx": {"mode": "fast_text",  "strategy": "auto"},
+                "csv":  {"mode": "fast_text",  "strategy": "fast"},
+                "tsv":  {"mode": "fast_text",  "strategy": "fast"},
+                "txt":  {"mode": "fast_text",  "strategy": "fast"},
+                "md":   {"mode": "fast_text",  "strategy": "fast"},
+                "html": {"mode": "fast_text",  "strategy": "fast"},
+                "epub": {"mode": "fast_text",  "strategy": "fast"},
+                "eml":  {"mode": "fast_text",  "strategy": "fast"},
+                "msg":  {"mode": "fast_text",  "strategy": "fast"},
+                "rtf":  {"mode": "fast_text",  "strategy": "fast"},
+                "png":  {"mode": "hybrid",     "strategy": "ocr_only"},
+                "jpg":  {"mode": "hybrid",     "strategy": "ocr_only"},
+                "jpeg": {"mode": "hybrid",     "strategy": "ocr_only"},
+            }
+            type_info = _TYPE_TO_INFO.get(source_type, {"mode": "fast_text", "strategy": "auto"})
+
             # Determine which pipeline mode was used for this source
-            analysis_mode = "deep_vision"
+            # Priority: schema_json override > type default
+            analysis_mode = "fast_text"
             if source and source.schema_json:
-                analysis_mode = source.schema_json.get("indexing_mode", "deep_vision")
+                analysis_mode = source.schema_json.get("indexing_mode",
+                               type_info["mode"])
             
             thread_id = f"{job.id}_{source.type}"
             config = {"configurable": {"thread_id": thread_id}}
@@ -218,21 +251,37 @@ async def _execute_source_indexing(source_id: str):
     from app.modules.pdf.flows.fast_text.agents.fast_indexing_agent import fast_indexing_agent
     from app.modules.pdf.flows.strategic_nexus.agents.nexus_strategic_indexer import strategic_nexus_indexer
     from app.modules.pdf.flows.hybrid_ocr.agents.hybrid_indexing_agent import hybrid_indexing_agent
+    from app.modules.pdf.utils.unstructured_partitioner import recommend_strategy
     from app.models.data_source import DataSource
     from app.infrastructure.database.postgres import async_session_factory
     from sqlalchemy import select
 
-    print(f"\n[STRATEGIC SIGNAL] RECEIVED SOURCE INDEXING TASK: {source_id}")
+    print(f"\n[UNIVERSAL DOC] RECEIVED SOURCE INDEXING TASK: {source_id}")
     logger.info("source_indexing_task_received", source_id=source_id)
 
-    # Determine indexing_mode from DataSource
-    indexing_mode = "deep_vision"  # default
+    # Determine indexing_mode from DataSource (based on source type and user preference)
+    indexing_mode = "fast_text"   # universal default
+    source_file_type = "pdf"
     try:
         async with async_session_factory() as db:
             res = await db.execute(select(DataSource).where(DataSource.id == uuid.UUID(source_id)))
             src = res.scalar_one_or_none()
-            if src and src.schema_json:
-                indexing_mode = src.schema_json.get("indexing_mode", "deep_vision")
+            if src:
+                source_file_type = src.type or "pdf"
+                if src.schema_json:
+                    indexing_mode = src.schema_json.get("indexing_mode", "fast_text")
+                # Ensure doc_strategy is stored in schema_json for later retrieval
+                doc_strategy = recommend_strategy(src.file_path or "", indexing_mode)
+                if src.schema_json is None:
+                    src.schema_json = {}
+                src.schema_json["doc_strategy"] = doc_strategy
+                from sqlalchemy import update
+                await db.execute(
+                    update(DataSource)
+                    .where(DataSource.id == uuid.UUID(source_id))
+                    .values(schema_json=src.schema_json)
+                )
+                await db.commit()
     except Exception as e:
         logger.warning("indexing_mode_lookup_failed", error=str(e))
 

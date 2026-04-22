@@ -34,9 +34,24 @@ def _build_context(state: AudioAnalysisState) -> str:
         entity_summary = ", ".join(f"{e.get('name')} ({e.get('type')})" for e in entities[:8])
         parts.append(f"Key Entities: {entity_summary}")
 
+    # ── Sliding Window Transcript Sampling ────────────────────────────────────
+    # For short recordings (≤30 turns): include all turns
+    # For long recordings (>30 turns): sample from Beginning + Middle + End
+    # This prevents critical context loss in long meetings/interviews
+    if len(turns) <= 30:
+        sampled_turns = turns
+    else:
+        n = len(turns)
+        head = turns[:10]                              # First 10 — opening context
+        mid_start = max(10, n // 2 - 5)
+        middle = turns[mid_start:mid_start + 10]      # 10 from the middle
+        tail = turns[-10:]                             # Last 10 — conclusions/action items
+        sampled_turns = head + middle + tail
+        parts.append(f"[Note: Transcript sampled from {n} total turns — head/middle/tail shown]")
+
     transcript_sample = "\n".join(
         f"{t.get('speaker_name', t.get('speaker_id','Speaker'))}: {t.get('text','')}"
-        for t in turns[:20]
+        for t in sampled_turns
     )
     parts.append(f"Transcript Sample:\n{transcript_sample}")
     return "\n\n".join(parts)

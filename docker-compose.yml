@@ -56,21 +56,8 @@ services:
           cpus: '1.5'
           memory: 4G
 
-  # ── Ollama (Local LLM Backend) ─────────────────────────────
-  ollama:
-    image: ollama/ollama:latest
-    container_name: analyst-ollama
-    restart: unless-stopped
-    volumes: [ollamadata:/root/.ollama]
-    networks: [backend-net]
-    # If GPU is available, uncomment the following:
-    # deploy:
-    #   resources:
-    #     reservations:
-    #       devices:
-    #         - driver: nvidia
-    #           count: 1
-    #           capabilities: [gpu]
+
+
 
   # ── Neo4j (Graph DB for Codebase Analysis) ───────────────────
   neo4j:
@@ -142,7 +129,7 @@ services:
         limits:
           cpus: '0.5'
           memory: 1G
-    depends_on: [redis, postgres, ollama]
+    depends_on: [redis, postgres]
 
   # ── Layer 3: The 4 Execution Pillars ────────────────────────
   worker-sql:
@@ -166,7 +153,7 @@ services:
         limits:
           cpus: '1.5'
           memory: 2G
-    depends_on: [redis, postgres, ollama]
+    depends_on: [redis, postgres]
 
 
 
@@ -191,7 +178,7 @@ services:
         limits:
           cpus: '1.0'
           memory: 1.5G
-    depends_on: [redis, postgres, mongodb, ollama]
+    depends_on: [redis, postgres, mongodb]
 
   worker-code:
     build: { context: ./services/worker-code, dockerfile: Dockerfile.worker }
@@ -216,7 +203,7 @@ services:
         limits:
           cpus: '1.5'
           memory: 4G
-    depends_on: [redis, postgres, ollama, neo4j]
+    depends_on: [redis, postgres, neo4j]
 
 
 
@@ -251,7 +238,7 @@ services:
         limits:
           cpus: '3.0'
           memory: 14G
-    depends_on: [redis, postgres, ollama, qdrant]
+    depends_on: [redis, postgres, qdrant]
 
   worker-pdf-analysis:
     build: { context: ./services/worker-pdf, dockerfile: Dockerfile.worker }
@@ -275,7 +262,7 @@ services:
         limits:
           cpus: '3.0'
           memory: 14G
-    depends_on: [redis, postgres, ollama, qdrant]
+    depends_on: [redis, postgres, qdrant]
 
   # ── Audio Intelligence Worker ────────────────────────────────
   worker-audio:
@@ -331,7 +318,7 @@ services:
         limits:
           cpus: '1.0'
           memory: 2G
-    depends_on: [redis, postgres, ollama, neo4j, qdrant]
+    depends_on: [redis, postgres, neo4j, qdrant]
 
   # ── Layer 4: Export Service ─────────────────────────────────
   exporter:

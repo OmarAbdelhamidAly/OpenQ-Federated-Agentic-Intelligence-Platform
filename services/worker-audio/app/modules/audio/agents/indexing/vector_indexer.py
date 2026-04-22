@@ -33,16 +33,26 @@ async def vector_indexer_agent(state: AudioAnalysisState) -> Dict[str, Any]:
         from qdrant_client.models import Distance, VectorParams, PointStruct
         from app.infrastructure.config import settings
 
-        embedder = FastEmbedEmbeddings(model_name="nomic-ai/nomic-embed-text-v1.5")
+        embedder = FastEmbedEmbeddings(model_name=settings.EMBED_MODEL_GENERAL)  # multilingual-e5-large, 1024d
         qdrant = QdrantClient(url=settings.QDRANT_URL)
 
-        # Ensure collection exists
+        # Ensure collection exists with correct dimension (auto-migrate if needed)
+        target_dim = settings.EMBED_DIM_GENERAL  # 1024
         try:
-            qdrant.get_collection(collection_name)
+            col_info = qdrant.get_collection(collection_name)
+            current_vectors = col_info.config.params.vectors
+            current_dim = current_vectors.size if hasattr(current_vectors, 'size') else None
+            if current_dim and current_dim != target_dim:
+                logger.info("audio_collection_dim_mismatch_recreating", collection=collection_name, old_dim=current_dim, new_dim=target_dim)
+                qdrant.delete_collection(collection_name)
+                qdrant.create_collection(
+                    collection_name=collection_name,
+                    vectors_config=VectorParams(size=target_dim, distance=Distance.COSINE),
+                )
         except Exception:
             qdrant.create_collection(
                 collection_name=collection_name,
-                vectors_config=VectorParams(size=768, distance=Distance.COSINE),
+                vectors_config=VectorParams(size=target_dim, distance=Distance.COSINE),
             )
 
         points = []

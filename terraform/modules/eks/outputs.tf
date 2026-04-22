@@ -9,3 +9,8 @@ output "kubeconfig-certificate-authority-data" {
 output "cluster_id" {
   value = aws_eks_cluster.main.id
 }
+
+output "aws_lbc_role_arn" {
+  description = "IAM Role ARN for the AWS Load Balancer Controller"
+  value       = aws_iam_role.aws_load_balancer_controller.arn
+}

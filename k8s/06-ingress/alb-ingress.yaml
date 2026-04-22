@@ -1,0 +1,44 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: openq-ingress
+  namespace: openq-core
+  annotations:
+    alb.ingress.kubernetes.io/scheme: internet-facing
+    alb.ingress.kubernetes.io/target-type: ip
+    # Dual-port: HTTP redirects to HTTPS automatically
+    alb.ingress.kubernetes.io/listen-ports: '[{"HTTP": 80},{"HTTPS": 443}]'
+    alb.ingress.kubernetes.io/ssl-redirect: '443'
+    # ACM certificate ARN — injected by Terraform output (module.acm.certificate_arn)
+    alb.ingress.kubernetes.io/certificate-arn: "CHANGE_ME_INJECTED_BY_TERRAFORM"
+    alb.ingress.kubernetes.io/ssl-policy: "ELBSecurityPolicy-TLS13-1-2-2021-06"
+    # Security headers
+    alb.ingress.kubernetes.io/load-balancer-attributes: >-
+      routing.http.drop_invalid_header_fields.enabled=true
+spec:
+  # ingressClassName replaces deprecated kubernetes.io/ingress.class annotation (K8s 1.18+)
+  ingressClassName: alb
+  rules:
+    - http:
+        paths:
+          - path: /api
+            pathType: Prefix
+            backend:
+              service:
+                name: api-service
+                port:
+                  number: 80
+          - path: /corporate
+            pathType: Prefix
+            backend:
+              service:
+                name: corporate-service
+                port:
+                  number: 80
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: frontend-service
+                port:
+                  number: 80

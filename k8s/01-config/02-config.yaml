@@ -28,14 +28,17 @@ kind: Secret
 metadata:
   name: openq-secrets
   namespace: openq-core
+  annotations:
+    # Managed by: AWS Secrets Manager via External Secrets Operator
+    # Terraform provisions the ASM secrets; ESO syncs them into this K8s Secret.
+    # Never store real values here — use Terraform outputs or CI injection.
 type: Opaque
 stringData:
-  # Note: These should ideally be managed by AWS Secrets Manager or Vault in Production.
-  # Terraform will eventually inject these.
-  DATABASE_URL: "postgresql+asyncpg://postgres:postgres@postgres-service:5432/analyst_agent"
-  REDIS_URL: "redis://redis-service:6379/0"
-  OPENROUTER_API_KEY: "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"
-  GEMINI_API_KEY: "AIzaSyDmeXmllRhG27XsGBUWC0Aw7Ol-Fb1J4P4"
-  GROQ_API_KEY: "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"
-  SECRET_KEY: "a332376cd99e2285d1d388bcce7fb960c8c2c8d09a246fc4294c43dcb58cbbd0"
-  AES_KEY: "O6n9/90O3e5PcUK3pFsC8o1wyQfQkm5CO+O/CEP6bgY="
+  DATABASE_URL: "CHANGE_ME_INJECTED_BY_TERRAFORM"
+  REDIS_URL: "CHANGE_ME_INJECTED_BY_TERRAFORM"
+  OPENROUTER_API_KEY: "CHANGE_ME_INJECTED_BY_TERRAFORM"
+  GEMINI_API_KEY: "CHANGE_ME_INJECTED_BY_TERRAFORM"
+  GROQ_API_KEY: "CHANGE_ME_INJECTED_BY_TERRAFORM"
+  NEO4J_PASSWORD: "CHANGE_ME_INJECTED_BY_TERRAFORM"
+  SECRET_KEY: "CHANGE_ME_INJECTED_BY_TERRAFORM"
+  AES_KEY: "CHANGE_ME_INJECTED_BY_TERRAFORM"

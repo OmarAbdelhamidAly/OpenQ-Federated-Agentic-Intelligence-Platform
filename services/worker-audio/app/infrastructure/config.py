@@ -64,6 +64,12 @@ class Settings(BaseSettings):
     MAX_AUDIO_SIZE_MB: int = 200  # Max audio file size (200MB = ~3h at 128kbps)
     MAX_AUDIO_DURATION_SECONDS: int = 10800  # 3 hours
 
+    # ── Embedding Models ──────────────────────────────────────────────────────
+    EMBED_MODEL_GENERAL: str = "intfloat/multilingual-e5-large" # 1024d — main RAG, multilingual
+    EMBED_MODEL_CACHE: str = "nomic-ai/nomic-embed-text-v1.5"  # 768d  — local cache
+    EMBED_DIM_GENERAL: int = 1024
+    EMBED_DIM_CACHE: int = 768
+
     @model_validator(mode="after")
     def _validate_production_secrets(self) -> "Settings":
         if self.ENV == "production":

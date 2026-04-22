@@ -1,0 +1,68 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: worker-audio
+  namespace: openq-workers
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: worker-audio
+  template:
+    metadata:
+      labels:
+        app: worker-audio
+    spec:
+      containers:
+      - name: worker-audio
+        image: omarabdelhamidaly/openq-worker-audio:latest
+        # Note: worker-audio uses "app.worker:celery_app" not "app.worker"
+        command: ["celery", "-A", "app.worker:celery_app", "worker",
+                  "-Q", "pillar.audio",
+                  "--loglevel=info",
+                  "--concurrency=2",
+                  "--prefetch-multiplier=1"]
+        envFrom:
+        - configMapRef:
+            name: openq-config
+        - secretRef:
+            name: openq-secrets
+        env:
+        - name: NEO4J_URI
+          value: "bolt://neo4j-service:7687"
+        - name: NEO4J_USERNAME
+          value: "neo4j"
+        - name: NEO4J_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: openq-secrets
+              key: NEO4J_PASSWORD
+        - name: QDRANT_URL
+          value: "http://qdrant-service:6333"
+        resources:
+          limits:
+            cpu: "1000m"
+            memory: "2Gi"
+          requests:
+            cpu: "500m"
+            memory: "1Gi"
+        livenessProbe:
+          exec:
+            command: ["celery", "-A", "app.worker:celery_app", "status"]
+          initialDelaySeconds: 30
+          periodSeconds: 60
+          timeoutSeconds: 10
+          failureThreshold: 3
+        readinessProbe:
+          exec:
+            command: ["celery", "-A", "app.worker:celery_app", "inspect", "ping"]
+          initialDelaySeconds: 15
+          periodSeconds: 30
+          timeoutSeconds: 5
+          failureThreshold: 2
+        volumeMounts:
+        - name: tenant-data
+          mountPath: /tmp/tenants
+      volumes:
+      - name: tenant-data
+        emptyDir: {} # TODO: Replace with EFS PVC in Production

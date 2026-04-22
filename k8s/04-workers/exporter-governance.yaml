@@ -29,6 +29,20 @@ spec:
           requests:
             cpu: "200m"
             memory: "512Mi"
+        livenessProbe:
+          exec:
+            command: ["celery", "-A", "app.worker", "status"]
+          initialDelaySeconds: 30
+          periodSeconds: 60
+          timeoutSeconds: 10
+          failureThreshold: 3
+        readinessProbe:
+          exec:
+            command: ["celery", "-A", "app.worker", "inspect", "ping"]
+          initialDelaySeconds: 15
+          periodSeconds: 30
+          timeoutSeconds: 5
+          failureThreshold: 2
         volumeMounts:
         - name: tenant-data
           mountPath: /tmp/tenants
@@ -67,9 +81,37 @@ spec:
           requests:
             cpu: "200m"
             memory: "512Mi"
+        livenessProbe:
+          exec:
+            command: ["celery", "-A", "app.worker", "status"]
+          initialDelaySeconds: 30
+          periodSeconds: 60
+          timeoutSeconds: 10
+          failureThreshold: 3
+        readinessProbe:
+          exec:
+            command: ["celery", "-A", "app.worker", "inspect", "ping"]
+          initialDelaySeconds: 15
+          periodSeconds: 30
+          timeoutSeconds: 5
+          failureThreshold: 2
         volumeMounts:
         - name: tenant-data
           mountPath: /tmp/tenants
       volumes:
       - name: tenant-data
         emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: governance-service
+  namespace: openq-core
+spec:
+  selector:
+    app: governance
+  ports:
+    - protocol: TCP
+      port: 80
+      targetPort: 8000
+  type: ClusterIP

@@ -67,21 +67,105 @@ resource "aws_eks_cluster" "main" {
   depends_on = [aws_iam_role_policy_attachment.cluster_AmazonEKSClusterPolicy]
 }
 
-# Managed Node Group (Spot for Workers Optimization)
-resource "aws_eks_node_group" "main" {
+# OIDC Provider for IRSA (IAM Roles for Service Accounts)
+data "tls_certificate" "eks" {
+  url = aws_eks_cluster.main.identity[0].oidc[0].issuer
+}
+
+resource "aws_iam_openid_connect_provider" "eks" {
+  client_id_list  = ["sts.amazonaws.com"]
+  thumbprint_list = [data.tls_certificate.eks.certificates[0].sha1_fingerprint]
+  url             = aws_eks_cluster.main.identity[0].oidc[0].issuer
+}
+
+# IAM Policy for AWS Load Balancer Controller
+resource "aws_iam_policy" "aws_load_balancer_controller" {
+  name        = "${var.project_name}-aws-load-balancer-controller"
+  description = "IAM Policy for AWS Load Balancer Controller"
+  # In a real environment, this should be the full JSON policy from AWS documentation.
+  # Using a placeholder for brevity/example.
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect   = "Allow"
+      Action   = ["elasticloadbalancing:*", "ec2:Describe*", "iam:CreateServiceLinkedRole"]
+      Resource = "*"
+    }]
+  })
+}
+
+# IRSA Role for AWS Load Balancer Controller
+resource "aws_iam_role" "aws_load_balancer_controller" {
+  name = "${var.project_name}-aws-load-balancer-controller"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect = "Allow"
+      Principal = {
+        Federated = aws_iam_openid_connect_provider.eks.arn
+      }
+      Action = "sts:AssumeRoleWithWebIdentity"
+      Condition = {
+        StringEquals = {
+          "${replace(aws_iam_openid_connect_provider.eks.url, "https://", "")}:sub" = "system:serviceaccount:kube-system:aws-load-balancer-controller"
+        }
+      }
+    }]
+  })
+}
+
+resource "aws_iam_role_policy_attachment" "aws_load_balancer_controller" {
+  role       = aws_iam_role.aws_load_balancer_controller.name
+  policy_arn = aws_iam_policy.aws_load_balancer_controller.arn
+}
+
+# ── Core Node Group (On-Demand) ──────────────────────────────
+resource "aws_eks_node_group" "core" {
   cluster_name    = aws_eks_cluster.main.name
-  node_group_name = "${var.project_name}-node-group"
+  node_group_name = "${var.project_name}-core-nodes"
   node_role_arn   = aws_iam_role.nodes.arn
   subnet_ids      = var.private_subnet_ids
 
   scaling_config {
     desired_size = 2
-    max_size     = 5
+    max_size     = 4
+    min_size     = 2
+  }
+
+  instance_types = ["t3.medium"]
+  capacity_type  = "ON_DEMAND"
+
+  labels = {
+    role = "core"
+  }
+
+  depends_on = [
+    aws_iam_role_policy_attachment.nodes_AmazonEKSWorkerNodePolicy,
+    aws_iam_role_policy_attachment.nodes_AmazonEKS_CNI_Policy,
+    aws_iam_role_policy_attachment.nodes_AmazonEC2ContainerRegistryReadOnly,
+  ]
+}
+
+# ── Worker Node Group (Spot for Heavy Tasks) ─────────────────
+resource "aws_eks_node_group" "workers" {
+  cluster_name    = aws_eks_cluster.main.name
+  node_group_name = "${var.project_name}-worker-nodes"
+  node_role_arn   = aws_iam_role.nodes.arn
+  subnet_ids      = var.private_subnet_ids
+
+  scaling_config {
+    desired_size = 2
+    max_size     = 10
     min_size     = 1
   }
 
-  instance_types = [var.node_instance_type]
-  capacity_type  = "SPOT" # Cost optimization as discussed
+  instance_types = ["c5.2xlarge", "m5.2xlarge"]
+  capacity_type  = "SPOT"
+
+  labels = {
+    role = "worker"
+  }
 
   depends_on = [
     aws_iam_role_policy_attachment.nodes_AmazonEKSWorkerNodePolicy,

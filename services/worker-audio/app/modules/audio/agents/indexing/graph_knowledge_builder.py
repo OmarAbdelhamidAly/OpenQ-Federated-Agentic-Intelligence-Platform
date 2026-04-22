@@ -54,32 +54,62 @@ async def graph_knowledge_builder_agent(state: AudioAnalysisState) -> Dict[str, 
                 {"speaker_id": speaker_id, "source_id": source_id, "name": speaker_name},
             )
 
-        # 3. Create SpeakerTurn chunks (The core of our GraphRAG)
-        for turn in speaker_turns:
-            chunk_id = turn.get("chunk_id")
-            if not chunk_id:
-                continue
-                
-            await neo4j.run_query(
-                """
-                MATCH (s:Speaker {speaker_id: $speaker_id, source_id: $source_id})
-                MATCH (a:AudioSource {source_id: $source_id})
-                MERGE (t:SpeakerTurn {chunk_id: $chunk_id})
-                SET t.text = $text,
-                    t.start_time = $start_time,
-                    t.embedding = $embedding
-                MERGE (s)-[:SPOKE]->(t)
-                MERGE (t)-[:PART_OF]->(a)
-                """,
-                {
-                    "chunk_id": chunk_id,
-                    "speaker_id": turn.get("speaker_id", "SPEAKER_01"),
-                    "source_id": source_id,
-                    "text": turn.get("text", ""),
-                    "start_time": turn.get("start_time", 0.0),
-                    "embedding": turn.get("embedding", [])
-                }
+        # 3. Create SpeakerTurn chunks (Lexical Graph Transformation)
+        from neo4j_graphrag.experimental.components.lexical_graph import LexicalGraphBuilder
+        from neo4j_graphrag.experimental.components.types import (
+            TextChunks, TextChunk, DocumentInfo, LexicalGraphConfig
+        )
+        from neo4j import GraphDatabase
+        from app.infrastructure.config import settings
+
+        if speaker_turns:
+            # Prepare TextChunks for sequential linking
+            kg_chunks = TextChunks(chunks=[
+                TextChunk(
+                    text=turn.get("text", ""),
+                    index=idx,
+                    uid=turn.get("chunk_id", ""),
+                    metadata={
+                        "speaker_id": turn.get("speaker_id", "SPEAKER_01"),
+                        "start_time": turn.get("start_time", 0.0),
+                        "pillar": "audio"
+                    }
+                )
+                for idx, turn in enumerate(speaker_turns)
+            ])
+
+            # Prepare AudioSource as DocumentInfo
+            doc_info = DocumentInfo(
+                uid=source_id,
+                path=f"audio://{source_id}",
+                metadata={"tenant_id": tenant_id, "topics": topics}
             )
+
+            # Build the Lexical Graph
+            with GraphDatabase.driver(settings.NEO4J_URI, auth=(settings.NEO4J_USER, settings.NEO4J_PASSWORD)) as driver:
+                builder = LexicalGraphBuilder(
+                    driver=driver,
+                    config=LexicalGraphConfig(
+                        node_label="Chunk",
+                        rel_type="NEXT_CHUNK"
+                    )
+                )
+                await builder.run(text_chunks=kg_chunks, document_info=doc_info)
+
+                # Post-process: Link Chunks to their Speakers (Custom domain logic)
+                for turn in speaker_turns:
+                    await driver.execute_query(
+                        """
+                        MATCH (s:Speaker {speaker_id: $speaker_id, source_id: $source_id})
+                        MATCH (c:Chunk {uid: $chunk_id})
+                        MERGE (s)-[:SPOKE]->(c)
+                        """,
+                        {
+                            "speaker_id": turn.get("speaker_id", "SPEAKER_01"),
+                            "source_id": source_id,
+                            "chunk_id": turn.get("chunk_id")
+                        }
+                    )
 
         # 4. Map semantic Entities discovered inside the transcript
         for entity in entities[:20]:  # Cap at 20 critical entities to avoid graph clutter
@@ -97,14 +127,14 @@ async def graph_knowledge_builder_agent(state: AudioAnalysisState) -> Dict[str, 
                 },
             )
 
-        # 5. Ensure Vector Index Exists for GDS
+        # 5. Ensure Vector Index Exists for GDS (1024d — multilingual-e5-large)
         await neo4j.run_query(
             """
             CREATE VECTOR INDEX audio_chunks IF NOT EXISTS 
             FOR (t:SpeakerTurn) 
             ON (t.embedding)
             OPTIONS {indexConfig: {
-                `vector.dimensions`: 768,
+                `vector.dimensions`: 1024,
                 `vector.similarity_function`: 'cosine'
             }}
             """

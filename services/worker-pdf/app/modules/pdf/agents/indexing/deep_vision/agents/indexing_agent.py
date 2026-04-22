@@ -24,7 +24,7 @@ from app.infrastructure.llm import get_llm
 from app.infrastructure.database.postgres import async_session_factory
 from app.models.knowledge import Document, KnowledgeBase
 from app.models.tenant import Tenant
-from app.modules.pdf.utils.qdrant_multivector import QdrantMultiVectorManager
+from app.modules.pdf.utils.qdrant_multivector import QdrantVectorManager
 from app.modules.pdf.utils.taxonomy import get_document_taxonomy
 from app.modules.pdf.utils.unstructured_partitioner import (
     partition_document,
@@ -42,17 +42,16 @@ logger = structlog.get_logger(__name__)
 _embed_model = None
 
 def _get_embedding_model():
-    """Returns local Embeddings via FastEmbed.
+    """Returns local multilingual-e5-large embeddings via FastEmbed.
     
-    Bypassing Gemini embeddings because Google AI Studio returns 404/geo-blocks,
-    and OpenRouter isn't available. FastEmbed is already installed in requirements.txt.
+    Model: intfloat/multilingual-e5-large
+    Dimensions: 1024
+    Languages: 100+ including Arabic, English, French, etc.
     """
     from langchain_community.embeddings.fastembed import FastEmbedEmbeddings
-    
-    # Defaults to BAAI/bge-small-en-v1.5 which is 384 dimensions natively
-    # To match our 768 vector size, we will use nomic-ai/nomic-embed-text-v1.5
+    from app.infrastructure.config import settings
     return FastEmbedEmbeddings(
-        model_name="nomic-ai/nomic-embed-text-v1.5" # 768 dimensions
+        model_name=settings.EMBED_MODEL_GENERAL  # intfloat/multilingual-e5-large — 1024d
     )
 
 # --- Centralized Taxonomy Moved to app.modules.pdf.utils.taxonomy ---
@@ -339,8 +338,8 @@ async def _run_indexing_core(
         f"kb_{str(kb_id).replace('-', '')}" if kb_id
         else f"ds_{str(id_for_meta).replace('-', '')}"
     )
-    qdrant = QdrantMultiVectorManager(collection_name=collection_name)
-    await qdrant.ensure_collection(text_vector_size=768)
+    qdrant = QdrantVectorManager(collection_name=collection_name)
+    await qdrant.ensure_collection(vector_size=settings.EMBED_DIM_GENERAL)  # 1024d (multilingual-e5-large)
 
     # ── 3. Universal Partitioning with hi_res strategy ─────────────────────────
     _update_doc_progress(id_for_meta, is_source, initial_schema, 5,
@@ -370,9 +369,9 @@ async def _run_indexing_core(
         text_vector = embed_model.embed_query(chunk.text)
         all_page_descriptions.append(chunk.text)
 
-        qdrant.upsert_page(
-            page_id=chunk.chunk_id,
-            text_vector=text_vector,
+        qdrant.upsert(
+            point_id=chunk.chunk_id,
+            vector=text_vector,
             metadata={
                 "doc_id": id_for_meta if not is_source else None,
                 "source_id": id_for_meta if is_source else None,
@@ -440,9 +439,9 @@ async def _run_indexing_core(
 
             # Embed the vision description and upsert
             text_vector = embed_model.embed_query(vision_description)
-            qdrant.upsert_page(
-                page_id=img_chunk.chunk_id,
-                text_vector=text_vector,
+            qdrant.upsert(
+                point_id=img_chunk.chunk_id,
+                vector=text_vector,
                 metadata={
                     "doc_id": id_for_meta if not is_source else None,
                     "source_id": id_for_meta if is_source else None,
@@ -458,28 +457,56 @@ async def _run_indexing_core(
     else:
         logger.info("no_image_elements_skipping_vision", source_id=id_for_meta)
 
-    # ── 6. Neo4j Knowledge Graph Sync ─────────────────────────────────────────
+    # ── 6. Neo4j Knowledge Graph Sync (Lexical Graph Transformation) ──────────
     try:
-        from app.infrastructure.neo4j_adapter import Neo4jAdapter
-        neo4j = Neo4jAdapter()
-        neo4j_chunks = [
-            {
-                "chunk_id": chunk.chunk_id,
-                "text": chunk.text,
-                "page": chunk.page_num,
-                "chunk_index": chunk.chunk_index,
-            }
-            for chunk in (text_chunks + image_chunks)
-        ]
-        taxonomy = get_document_taxonomy(context_hint)
-        await neo4j.batch_upsert_document_structure(
-            source_id=id_for_meta,
-            document_id=id_for_meta,
-            chunks=neo4j_chunks,
-            taxonomy=taxonomy,
+        from neo4j_graphrag.experimental.components.lexical_graph import LexicalGraphBuilder
+        from neo4j_graphrag.experimental.components.types import (
+            TextChunks, TextChunk, DocumentInfo, LexicalGraphConfig
         )
-        logger.info("neo4j_vision_sync_done",
-                    source_id=id_for_meta, chunks=len(neo4j_chunks))
+        from neo4j import GraphDatabase
+
+        # 1. Prepare TextChunks (preserves order for NEXT_CHUNK)
+        all_elements = text_chunks + image_chunks
+        # Sort by page then index to ensure correct sequence
+        all_elements.sort(key=lambda x: (x.page_num, x.chunk_index))
+        
+        kg_chunks = TextChunks(chunks=[
+            TextChunk(
+                text=chunk.text if hasattr(chunk, 'text') else "", 
+                index=idx,
+                uid=chunk.chunk_id,
+                metadata={
+                    "page_num": chunk.page_num,
+                    "element_type": chunk.element_type.value if hasattr(chunk.element_type, 'value') else str(chunk.element_type)
+                }
+            )
+            for idx, chunk in enumerate(all_elements)
+        ])
+
+        # 2. Prepare Document Info
+        doc_info = DocumentInfo(
+            uid=id_for_meta,
+            path=file_path,
+            metadata={
+                "source_id": id_for_meta if is_source else None,
+                "tenant_id": tenant_id,
+                "taxonomy": get_document_taxonomy(context_hint)
+            }
+        )
+
+        # 3. Build the Lexical Graph
+        with GraphDatabase.driver(settings.NEO4J_URI, auth=(settings.NEO4J_USER, settings.NEO4J_PASSWORD)) as driver:
+            builder = LexicalGraphBuilder(
+                driver=driver,
+                config=LexicalGraphConfig(
+                    node_label="Chunk",
+                    rel_type="NEXT_CHUNK"
+                )
+            )
+            await builder.run(text_chunks=kg_chunks, document_info=doc_info)
+
+        logger.info("neo4j_lexical_graph_sync_done", 
+                    source_id=id_for_meta, chunks=len(all_elements))
     except Exception as neo_err:
         logger.warning("neo4j_vision_sync_failed_secondary", error=str(neo_err))
 

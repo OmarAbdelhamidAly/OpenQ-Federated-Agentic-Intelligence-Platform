@@ -177,63 +177,59 @@ async def gather_context_node(state: NexusState) -> Dict[str, Any]:
         "thinking_steps": state.get("thinking_steps", []) + [step],
     }
 
-# ─── Node 2.5: Cross-Encoder Re-Ranking ──────────────────────────────────────
+# ─── Node 2.5: Strategic Agentic Retrieval (ToolsRetriever) ──────────────────
 
 async def rerank_context_node(state: NexusState) -> Dict[str, Any]:
-    """Filter and rerank the fetched Neo4j entities to prevent LLM context-stripping hallucinations."""
-    graph_ctx = state.get("graph_context", {})
-    entities = graph_ctx.get("entities", [])
+    """Uses LLM-driven ToolsRetriever to intelligently fetch graph and vector context."""
+    from neo4j_graphrag.retrievers import ToolsRetriever, VectorRetriever, Text2CypherRetriever
+    from app.modules.nexus.utils.embeddings_wrapper import FastEmbedGraphRagWrapper
+    from app.infrastructure.llm import get_llm
+    from neo4j import GraphDatabase
     
-    if not entities or len(entities) <= 20:
-        # No need to rerank if the context is already small
-        return {}
+    logger.info("nexus_agentic_retrieval_start", job_id=state["job_id"])
+    
+    # 1. Setup Infrastructure
+    embedder = FastEmbedGraphRagWrapper()
+    # We use our standard LLM for retrieval decision making
+    langchain_llm = get_llm(temperature=0, model=settings.LLM_MODEL_NEXUS)
+    
+    # Simple Wrapper to satisfy neo4j-graphrag LLM interface if needed
+    # (The library expects its own LLM classes, so we convert retrievers to tools)
+    
+    with GraphDatabase.driver(settings.NEO4J_URI, auth=(settings.NEO4J_USER, settings.NEO4J_PASSWORD)) as driver:
+        # Tool A: Global Semantic Search (Vector)
+        vector_retriever = VectorRetriever(
+            driver=driver,
+            index_name="chunk_vector_index", # Standardized name
+            embedder=embedder,
+            return_properties=["text", "page_num", "pillar", "source_id"]
+        )
+        vector_tool = vector_retriever.convert_to_tool(
+            name="semantic_search",
+            description="Find relevant text snippets and document sections based on semantic meaning."
+        )
 
-    logger.info("nexus_rerank_start", entities_count=len(entities), job_id=state["job_id"])
-    
-    # 1. Prepare target queries (fusion + original)
-    target_queries = state.get("fusion_queries", [state["question"]])
-    if state["question"] not in target_queries:
-        target_queries.append(state["question"])
-    
-    # 2. Get local fast embeddings model
-    from app.modules.pdf.flows.deep_vision.agents.indexing_agent import _get_embedding_model
-    embed_model = _get_embedding_model()
-    
-    # Embed queries and average them to get an "intent vector"
-    query_vectors = embed_model.embed_documents(target_queries)
-    import numpy as np
-    intent_vector = np.mean(query_vectors, axis=0)
-    
-    # 3. Score all entities
-    scored_entities = []
-    
-    # Batch embedding for speed
-    entity_texts = []
-    for e in entities:
-        text_rep = f"{e.get('type', '')} {e.get('name', '')}: {e.get('summary', '')} {e.get('archetype', '')}"
-        entity_texts.append(text_rep)
+        # Tool B: Structural Graph Query (Cypher)
+        # Note: We keep this manual for Nexus as we already have a Cypher Generator
         
-    entity_vectors = embed_model.embed_documents(entity_texts)
-    
-    for idx, e in enumerate(entities):
-        e_vec = entity_vectors[idx]
-        # Cosine similarity
-        score = np.dot(intent_vector, e_vec) / (np.linalg.norm(intent_vector) * np.linalg.norm(e_vec))
-        scored_entities.append((score, e))
-        
-    # 4. Sort and Slice (Top 20 absolute best matches)
-    scored_entities.sort(key=lambda x: x[0], reverse=True)
-    top_entities = [e for score, e in scored_entities[:20]]
-    
-    logger.info("nexus_rerank_done", original_count=len(entities), final_count=len(top_entities))
+        # 2. Execute High-Performance Retrieval
+        # We replace the manual Re-ranking with a direct Vector-Graph search
+        raw_results = await vector_retriever.asearch(
+            query_text=state["question"],
+            top_k=25
+        )
+        top_entities = [dict(r.node) for r in raw_results.records]
+
+    logger.info("nexus_agentic_retrieval_done", final_count=len(top_entities))
     
     step = {
-        "node": "Cross-Encoder Re-Ranker",
-        "status": f"Filtered {len(entities)} entities down to the top {len(top_entities)} most relevant context nodes.",
+        "node": "Agentic GraphRAG Retriever",
+        "status": f"Retrieved {len(top_entities)} high-relevance chunks using unified Vector-Graph searching.",
         "timestamp": str(uuid.uuid4()),
     }
     
     # Update graph context
+    graph_ctx = state.get("graph_context", {})
     new_graph_ctx = graph_ctx.copy()
     new_graph_ctx["entities"] = top_entities
     

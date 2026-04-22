@@ -4,7 +4,7 @@ uvicorn[standard]==0.34.0
 python-multipart==0.0.20
 
 # ── Database ──────────────────────────────────────────────────────────────────
-sqlalchemy[asyncio]==2.0.36
+sqlalchemy[asyncio]==2.0.49
 asyncpg==0.30.0
 psycopg2-binary==2.9.10
 
@@ -27,9 +27,12 @@ langgraph-checkpoint-redis>=0.1.0
 # ── Vector DB ─────────────────────────────────────────────────────────────────
 qdrant-client>=1.11.0
 fastembed>=0.4.0
+numba>=0.57.0
+llvmlite>=0.40.0
 
 # ── Neo4j Graph DB ────────────────────────────────────────────────────────────
-neo4j==5.21.0
+# GraphRAG
+neo4j-graphrag[qdrant,fuzzy-matching]==1.4.0
 
 # ── Audio Processing ──────────────────────────────────────────────────────────
 pydub>=0.25.1          # Audio normalization, format conversion, silence detection

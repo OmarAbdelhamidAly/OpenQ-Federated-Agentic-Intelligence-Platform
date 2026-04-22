@@ -9,8 +9,8 @@ Flow:
     → entity_extractor    (llama-3.1-8b, text only)
     → summarizer          (gemini-flash-lite, text only)
     → evaluator           (local SLMs, zero-cost)
-    → vector_indexer      (Qdrant embedding)
-    → graph_knowledge     (Neo4j entities mapping)
+    → [vector_indexer ║ graph_knowledge_builder]  (parallel — both independent)
+    → semantic_cache      (save result to Qdrant cache)
     → output_assembler
   END
 """
@@ -30,6 +30,7 @@ from app.modules.audio.agents.indexing.evaluation_agent import evaluation_agent
 from app.modules.audio.agents.indexing.vector_indexer import vector_indexer_agent
 from app.modules.audio.agents.indexing.graph_knowledge_builder import graph_knowledge_builder_agent
 from app.modules.audio.agents.indexing.output_assembler import output_assembler
+from app.modules.audio.agents.retrieval.semantic_cache_agent import save_semantic_cache
 
 logger = structlog.get_logger(__name__)
 
@@ -66,6 +67,7 @@ def build_audio_graph(checkpointer: Any = None) -> Any:
     graph.add_node("evaluator", evaluation_agent)
     graph.add_node("vector_indexer", vector_indexer_agent)
     graph.add_node("graph_knowledge_builder", graph_knowledge_builder_agent)
+    graph.add_node("semantic_cache", save_semantic_cache)
     graph.add_node("output_assembler", output_assembler)
 
     # ── Define Edges ─────────────────────────────────────────────────────────
@@ -85,13 +87,18 @@ def build_audio_graph(checkpointer: Any = None) -> Any:
         {"diarize": "diarization", "end": "output_assembler"},
     )
 
-    # Linear from diarization onwards
     graph.add_edge("diarization", "entity_extractor")
     graph.add_edge("entity_extractor", "summarizer")
     graph.add_edge("summarizer", "evaluator")
+
+    # ── PARALLEL: vector_indexer ║ graph_knowledge_builder ───────────────────
+    # Both nodes are independent (no shared state mutations), run concurrently
     graph.add_edge("evaluator", "vector_indexer")
-    graph.add_edge("vector_indexer", "graph_knowledge_builder")
-    graph.add_edge("graph_knowledge_builder", "output_assembler")
+    graph.add_edge("evaluator", "graph_knowledge_builder")
+    graph.add_edge("vector_indexer", "semantic_cache")
+    graph.add_edge("graph_knowledge_builder", "semantic_cache")
+
+    graph.add_edge("semantic_cache", "output_assembler")
     graph.add_edge("output_assembler", END)
 
     return graph.compile(checkpointer=checkpointer)

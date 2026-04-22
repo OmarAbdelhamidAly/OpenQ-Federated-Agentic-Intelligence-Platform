@@ -49,4 +49,10 @@ class Settings(BaseSettings):
     # ── Logging ───────────────────────────────────────────────
     LOG_LEVEL: str = "INFO"
 
+    # ── Embedding Models ──────────────────────────────────────
+    EMBED_MODEL_GENERAL: str = "intfloat/multilingual-e5-large" # 1024d — main RAG
+    EMBED_MODEL_CACHE: str = "nomic-ai/nomic-embed-text-v1.5"  # 768d  — local cache
+    EMBED_DIM_GENERAL: int = 1024
+    EMBED_DIM_CACHE: int = 768
+
 settings = Settings()

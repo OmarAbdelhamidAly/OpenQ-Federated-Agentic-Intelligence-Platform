@@ -1,6 +1,5 @@
-import { useState, useEffect, useRef, useMemo } from 'react';
-import { AlertCircle, Maximize2, ExternalLink, Loader2, TrendingUp } from 'lucide-react';
-import { AnalysisAPI } from '../../services/api';
+import { useState, useEffect, useMemo } from 'react';
+import { AlertCircle, Loader2, TrendingUp } from 'lucide-react';
 import Plotly from 'plotly.js-dist-min';
 import createPlotlyComponent from 'react-plotly.js/factory';
 const Plot = createPlotlyComponent(Plotly);
@@ -11,10 +10,7 @@ interface DynamicChartProps {
 
 export default function DynamicChart({ config }: DynamicChartProps) {
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const containerRef = useRef<HTMLDivElement>(null);
-
-  const isSuperset = false; // Superset integration removed
+  const [error] = useState<string | null>(null);
   const isPlotly = config?.data && config?.layout; 
 
   useEffect(() => {

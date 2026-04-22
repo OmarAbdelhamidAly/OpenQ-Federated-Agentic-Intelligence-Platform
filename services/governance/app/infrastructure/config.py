@@ -49,9 +49,11 @@ class Settings(BaseSettings):
     LLM_MODEL_PDF: str = "google/gemini-2.0-flash-lite-001"
     LLM_MODEL_NEXUS: str = "google/gemini-2.0-flash-001"
     LLM_MODEL_FAST: str = "meta-llama/llama-3.2-3b-instruct"
-    LLM_MODEL_VISION: str = "meta-llama/llama-3.2-11b-vision-instruct"
-
-
+    LLM_MODEL_VISION: str = "meta-llama/llama-3.2-11b-vision-instruct"    # ── Embedding Models ──────────────────────────────────────
+    EMBED_MODEL_GENERAL: str = "intfloat/multilingual-e5-large" # 1024d — main RAG
+    EMBED_MODEL_CACHE: str = "nomic-ai/nomic-embed-text-v1.5"  # 768d  — local cache
+    EMBED_DIM_GENERAL: int = 1024
+    EMBED_DIM_CACHE: int = 768
 
 
     # ── Qdrant ────────────────────────────────────────────────

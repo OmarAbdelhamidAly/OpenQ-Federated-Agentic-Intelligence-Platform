@@ -34,6 +34,20 @@ spec:
           requests:
             cpu: "1000m"
             memory: "4Gi"
+        livenessProbe:
+          exec:
+            command: ["celery", "-A", "app.worker", "status"]
+          initialDelaySeconds: 30
+          periodSeconds: 60
+          timeoutSeconds: 10
+          failureThreshold: 3
+        readinessProbe:
+          exec:
+            command: ["celery", "-A", "app.worker", "inspect", "ping"]
+          initialDelaySeconds: 15
+          periodSeconds: 30
+          timeoutSeconds: 5
+          failureThreshold: 2
         volumeMounts:
         - name: tenant-data
           mountPath: /tmp/tenants
@@ -41,9 +55,10 @@ spec:
           mountPath: /app/hf_cache
       volumes:
       - name: tenant-data
-        emptyDir: {}
+        emptyDir: {} # TODO: Replace with EFS PVC
       - name: hf-cache
-        emptyDir: {}
+        persistentVolumeClaim:
+          claimName: hf-cache-pvc # EFS-backed PVC for shared model caching
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -81,6 +96,20 @@ spec:
           requests:
             cpu: "1000m"
             memory: "4Gi"
+        livenessProbe:
+          exec:
+            command: ["celery", "-A", "app.worker", "status"]
+          initialDelaySeconds: 30
+          periodSeconds: 60
+          timeoutSeconds: 10
+          failureThreshold: 3
+        readinessProbe:
+          exec:
+            command: ["celery", "-A", "app.worker", "inspect", "ping"]
+          initialDelaySeconds: 15
+          periodSeconds: 30
+          timeoutSeconds: 5
+          failureThreshold: 2
         volumeMounts:
         - name: tenant-data
           mountPath: /tmp/tenants
@@ -88,6 +117,7 @@ spec:
           mountPath: /app/hf_cache
       volumes:
       - name: tenant-data
-        emptyDir: {}
+        emptyDir: {} # TODO: Replace with EFS PVC
       - name: hf-cache
-        emptyDir: {}
+        persistentVolumeClaim:
+          claimName: hf-cache-pvc # EFS-backed PVC for shared model caching

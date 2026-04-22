@@ -10,7 +10,7 @@ logger = structlog.get_logger(__name__)
 class CodeEnricher:
     """
     Uses centralized LLM factory to generate technical summaries.
-    Uses Gemini for high-quality embeddings.
+    Uses StarEncoder (768d) for local, specialized code embeddings.
     """
     def __init__(self):
         # 1. Initialize LLM via centralized factory
@@ -21,15 +21,23 @@ class CodeEnricher:
             logger.error("enricher_llm_init_failed", error=str(e))
             self.enabled = False
 
-        # 2. Embeddings (Google text-embedding-004 is modern and cost-effective)
-        if settings.GEMINI_API_KEY:
-            self.embeddings_model = GoogleGenerativeAIEmbeddings(
-                model="models/text-embedding-004",
-                google_api_key=settings.GEMINI_API_KEY
-            )
-        else:
-            self.embeddings_model = None
-            logger.warning("embeddings_disabled_no_gemini_key")
+        # 2. Lazy-loaded StarEncoder model (local, 768d)
+        self._embeddings_model = None
+
+    @property
+    def embeddings_model(self):
+        """Lazy loader for StarEncoder to avoid memory overhead if not used."""
+        if self._embeddings_model is None:
+            try:
+                from sentence_transformers import SentenceTransformer
+                # Use starencoder from config (e.g., 'starencoder' or 'bigcode/starencoder')
+                model_name = getattr(settings, "EMBED_MODEL_CODE", "starencoder")
+                self._embeddings_model = SentenceTransformer(model_name, trust_remote_code=True)
+                logger.info("starencoder_loaded", model=model_name)
+            except Exception as e:
+                logger.error("starencoder_load_failed", error=str(e))
+                return None
+        return self._embeddings_model
 
         self.summary_prompt = ChatPromptTemplate.from_messages([
             ("system", "You are an expert software architect. "
@@ -102,7 +110,12 @@ class CodeEnricher:
             return []
         
         try:
-            return await self.embeddings_model.aembed_query(text)
+            import asyncio
+            # SentenceTransformer.encode is synchronous; wrap in thread for async safety
+            def _encode():
+                return self.embeddings_model.encode(text).tolist()
+                
+            return await asyncio.to_thread(_encode)
         except Exception as e:
             logger.error("embedding_failed", error=str(e))
             return []

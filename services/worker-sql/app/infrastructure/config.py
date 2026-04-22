@@ -61,8 +61,11 @@ class Settings(BaseSettings):
     QDRANT_URL: str = "http://localhost:6333"
     QDRANT_API_KEY: str = ""
 
-
-
+    # ── Embedding Models ──────────────────────────────────────
+    EMBED_MODEL_GENERAL: str = "intfloat/multilingual-e5-large" # 1024d — main RAG
+    EMBED_MODEL_CACHE: str = "nomic-ai/nomic-embed-text-v1.5"  # 768d  — local cache
+    EMBED_DIM_GENERAL: int = 1024
+    EMBED_DIM_CACHE: int = 768
 
 
     # ── AES-256 Encryption ────────────────────────────────────

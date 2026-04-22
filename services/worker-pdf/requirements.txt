@@ -4,7 +4,7 @@ uvicorn[standard]==0.34.0
 python-multipart==0.0.20
 
 # Database
-sqlalchemy[asyncio]==2.0.36
+sqlalchemy[asyncio]==2.0.49
 asyncpg==0.30.0
 aiosqlite==0.20.0
 alembic==1.14.1
@@ -73,12 +73,16 @@ PyMuPDF==1.25.1
 
 # Neo4j Graph DB
 neo4j==5.21.0
+# GraphRAG
+neo4j-graphrag[qdrant,fuzzy-matching]==1.4.0
+
+# Specific versions for Python 3.11 compatibility
+numba>=0.57.0
+llvmlite>=0.40.0
 
 # ── Universal Document Intelligence ───────────────────────────────────────────
 # Unstructured.io — intelligent element-aware document parsing
-# Supports: PDF, DOCX, PPTX, XLSX, HTML, EPUB, EML, MSG, TXT, MD, RTF, ODT,
-#           CSV, TSV, PNG, JPG (via OCR strategy)
-unstructured[pdf,docx,pptx,xlsx,md,html,epub,eml,odt,rtf,csv,tsv]>=0.16.0
+unstructured[pdf,docx,pptx,xlsx,md,html,epub,eml,odt,rtf,csv,tsv]==0.16.11
 
 # Required by Unstructured for DOCX/PPTX parsing
 python-docx>=1.1.2

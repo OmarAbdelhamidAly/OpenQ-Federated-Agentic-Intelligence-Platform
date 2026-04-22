@@ -1,0 +1,58 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: corporate
+  namespace: openq-core
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: corporate
+  template:
+    metadata:
+      labels:
+        app: corporate
+    spec:
+      containers:
+      - name: corporate
+        image: omarabdelhamidaly/openq-corporate:latest
+        ports:
+        - containerPort: 8009
+        envFrom:
+        - configMapRef:
+            name: openq-config
+        - secretRef:
+            name: openq-secrets
+        resources:
+          limits:
+            cpu: "500m"
+            memory: "1Gi"
+          requests:
+            cpu: "200m"
+            memory: "512Mi"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8009
+          initialDelaySeconds: 15
+          periodSeconds: 20
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8009
+          initialDelaySeconds: 5
+          periodSeconds: 10
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: corporate-service
+  namespace: openq-core
+spec:
+  selector:
+    app: corporate
+  ports:
+    - protocol: TCP
+      port: 80
+      targetPort: 8009
+  type: ClusterIP

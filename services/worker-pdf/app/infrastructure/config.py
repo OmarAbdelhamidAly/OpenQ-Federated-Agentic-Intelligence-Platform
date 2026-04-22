@@ -52,6 +52,13 @@ class Settings(BaseSettings):
     LLM_MODEL_FAST: str = "meta-llama/llama-3.2-3b-instruct"
     LLM_MODEL_VISION: str = "meta-llama/llama-3.2-11b-vision-instruct"
     
+    # ── Embedding Models ──────────────────────────────────────
+    EMBED_MODEL_GENERAL: str = "intfloat/multilingual-e5-large" # 1024d — main RAG, multilingual
+    EMBED_MODEL_CODE: str = "starencoder"                       # 768d  — code-specialized
+    EMBED_MODEL_CACHE: str = "nomic-ai/nomic-embed-text-v1.5"  # 768d  — local, multilingual cache
+    EMBED_DIM_GENERAL: int = 1024
+    EMBED_DIM_CACHE: int = 768
+    
     # ── Neo4j ─────────────────────────────────────────────────
     NEO4J_URI: str = "bolt://neo4j:7687"
     NEO4J_USERNAME: str = "neo4j"

@@ -108,8 +108,15 @@ async def _llm_resolve_speakers(
             default_headers={"HTTP-Referer": "https://openq.ai", "X-Title": "OpenQ"},
         )
 
-        # Sample first 10 turns for context
-        sample = speaker_turns[:10]
+        # Sample turns distributed across the transcript for better speaker coverage
+        # (speakers active only in the middle/end are missed by first-10 sampling)
+        n = len(speaker_turns)
+        if n <= 20:
+            sample = speaker_turns
+        else:
+            # Take 7 from start, 7 from middle, 6 from end
+            mid = n // 2
+            sample = speaker_turns[:7] + speaker_turns[mid-3:mid+4] + speaker_turns[-6:]
         sample_text = "\n".join([
             f"{t.get('speaker_id')}: {t.get('text', '')[:100]}"
             for t in sample

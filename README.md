@@ -44,6 +44,8 @@ A user connects a data source, types a natural-language question, and the system
 | **JSON** | `worker-json` | File upload | Semantic flattening + NoSQL/Vector Hybrid Search. |
 | **Source Code** | `worker-code` | Neo4j GDS | AST-parsed GDS Weaver (Louvain Modules & PageRank). |
 | **Audio** | `worker-audio` | Gemini Flash | Native Multimodal Transcription + Fast Retrieval (Skip-Indexing). |
+| **Live Vision** | `worker-vision` | RTSP / Camera | **AI Vision Intelligence**: YOLOv11 + FaceNet for identity & focus tracking. |
+| **Corporate Hub** | `corporate` | Org Graph | **Strategic Intelligence**: Hierarchy, Goals, and Policy Governance. |
 | **Multi-pillar** | `worker-nexus` | Federated Graph | Strategic Orchestrator of the GraphRAG Pillar Federation. |
 
 
@@ -302,6 +304,7 @@ Each is an independently scalable Docker container with its own `requirements.tx
 | [worker-pdf](services/worker-pdf/README.md) | `pillar.pdf` | **10-node Orchestrator StateGraph** | Gemini 2.0 Flash Vision, triple synthesis engines, anti-hallucination loop |
 | [worker-code](services/worker-code/README.md) | `pillar.code` | **8-node Cyclic StateGraph** | Neo4j AST-mapped codebase, Cypher generation, episodic memory |
 | [worker-audio](services/worker-audio/README.md) | `pillar.audio` | Direct task (Gemini 1.5 Flash) | Transcript, speaker diarization, entity extraction, Neo4j sync |
+| [worker-vision](services/worker-vision/README.md) | `pillar.vision` | **Vision Engine** | YOLOv11 detection + FaceNet recognition, 10s sampling, focus analytics |
 | [worker-image](services/worker-image/README.md) | `pillar.image` | Direct task (Gemini multimodal) | Object/scene recognition, entity extraction, Neo4j sync |
 | [worker-video](services/worker-video/README.md) | `pillar.video` | Direct task (Gemini multimodal) | Scene analysis, entity extraction, Neo4j sync |
 | [worker-nexus](services/worker-nexus/README.md) | `pillar.nexus` | **6-node Federated Orchestrator** | Cross-pillar Neo4j forge → context gather → 5-pillar strategic synthesis |

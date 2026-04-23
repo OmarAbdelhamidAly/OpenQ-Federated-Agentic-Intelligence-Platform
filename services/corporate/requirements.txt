@@ -24,5 +24,7 @@ email-validator==2.2.0
 structlog==24.4.0
 prometheus-fastapi-instrumentator
 
-# Utils
-cryptography==44.0.0
+# AI & Knowledge Graph
+langchain==0.3.14
+langchain-openai==0.2.14
+neo4j==5.27.0

@@ -12,6 +12,8 @@ import SentinelNexus from './components/Governance/SentinelNexus';
 import TeamManagementView from './components/Governance/TeamManagementView';
 import AboutUs from './components/Dashboard/AboutUs';
 import NexusDashboard from './components/NexusDashboard';
+import CorporateDashboard from './components/Dashboard/CorporateDashboard';
+import VisionDashboard from './components/Dashboard/VisionDashboard';
 import { AuthAPI } from './services/api';
 import { useAppStore } from './store/appStore';
 import type { AuthUser, BrandingConfig, PortalType } from './types';
@@ -162,6 +164,8 @@ function App() {
       case 'team':     return <TeamManagementView />;
       case 'about':    return <AboutUs />;
       case 'nexus':    return <NexusDashboard />;
+      case 'corporate': return <CorporateDashboard />;
+      case 'vision':    return <VisionDashboard />;
       default:         return <ChatInterface />;
     }
   };

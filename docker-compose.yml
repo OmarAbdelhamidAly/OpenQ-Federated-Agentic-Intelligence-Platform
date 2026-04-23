@@ -71,8 +71,6 @@ services:
       NEO4J_apoc_import_file_enabled: "true"
       NEO4J_apoc_import_file_use__neo4j__config: "true"
       NEO4J_dbms_security_procedures_unrestricted: apoc.*, gds.*
-      NEO4J_server_metrics_prometheus_enabled: "true"
-      NEO4J_server_metrics_prometheus_endpoint: "0.0.0.0:2004"
       NEO4J_PLUGINS: '["apoc", "graph-data-science"]'
     volumes: [neo4jdata:/data]
     networks: [backend-net]
@@ -427,7 +425,7 @@ services:
     image: gcr.io/cadvisor/cadvisor:latest
     container_name: analyst-cadvisor
     restart: unless-stopped
-    ports: ["8080:8080"]
+    ports: ["8085:8080"]
     volumes:
       - /:/rootfs:ro
       - /var/run:/var/run:rw
@@ -462,6 +460,20 @@ services:
     networks: [frontend-net]
     depends_on:
       api: { condition: service_started }
+
+  # ── Vision Intelligence (Employee Tracking) ─────────────
+  worker-vision:
+    build: { context: ./services/worker-vision, dockerfile: Dockerfile }
+    container_name: analyst-worker-vision
+    restart: unless-stopped
+    env_file: [.env]
+    environment:
+      DATABASE_URL: postgresql+asyncpg://postgres:postgres@postgres:5432/analyst_agent
+      REDIS_URL: redis://redis:6379/0
+    networks: [backend-net]
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
 
 networks:
   frontend-net:

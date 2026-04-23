@@ -35,6 +35,8 @@ export type ViewKey =
   | 'image'
   | 'audio'
   | 'video'
+  | 'corporate'
+  | 'vision'
   | 'about';
 
 export type PortalType = Extract<ViewKey, 'csv' | 'sql' | 'pdf' | 'json' | 'codebase' | 'image' | 'audio' | 'video'>;

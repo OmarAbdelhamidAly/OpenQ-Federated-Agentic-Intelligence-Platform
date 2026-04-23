@@ -21,7 +21,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     # ── Database Sync ──
     from sqlalchemy import text
     from app.infrastructure.database import engine, Base
-    from app.models import org_node, task, submission
+    from app.models import OrgNode, CorporateTask, TaskSubmission, CorporateGoal, CorporatePolicy
 
     try:
         async with engine.begin() as conn:
@@ -49,9 +49,11 @@ def create_app() -> FastAPI:
     async def health():
         return {"status": "ok", "service": "corporate"}
 
-    # Placeholder for routers
-    # app.include_router(hierarchy.router)
-    # app.include_router(tasks.router)
+    # ── Register Routers ──
+    from app.modules import hierarchy, tasks, strategy
+    app.include_router(hierarchy.router)
+    app.include_router(tasks.router)
+    app.include_router(strategy.router)
 
     return app
 

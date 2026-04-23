@@ -19,7 +19,9 @@ import {
   Loader2,
   Zap,
   Image as ImageIcon,
-  Film
+  Film,
+  Building2,
+  BrainCircuit
 } from 'lucide-react';
 import { VoiceAPI } from '../../services/api';
 import { recorder } from '../../utils/audio';
@@ -189,6 +191,16 @@ export default function Sidebar({ onLogout }: { onLogout: () => void }) {
           <NavItem id="sentinel" icon={ShieldCheck} label="Insightify Sentinel" color="text-emerald-400" />
           <NavItem id="team" icon={Users} label="Team Management" />
         </div>
+
+        {user?.role === 'admin' && (
+          <>
+            <SectionHeader>Admin Control</SectionHeader>
+            <div className="space-y-1">
+              <NavItem id="corporate" icon={Building2} label="Corporate Map" color="text-emerald-400" />
+              <NavItem id="vision" icon={BrainCircuit} label="Vision Intelligence" color="text-cyan-400" />
+            </div>
+          </>
+        )}
 
 
         {/* Dynamic Connections Section */}

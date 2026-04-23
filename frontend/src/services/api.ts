@@ -6,3 +6,5 @@ export * from './analysis.api';
 export * from './governance.api';
 export * from './users.api';
 export * from './codebase.api';
+export * from './corporate.api.ts';
+export * from './vision.api.ts';

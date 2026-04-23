@@ -41,6 +41,7 @@ graph TD
     
     D --> I[Helm: AWS Load Balancer Controller]
     D --> J[Helm: External Secrets Operator]
+    D --> M[Helm: Kube-Prometheus-Stack]
     
     K[ECR Module] -. Independent .-> A
     L[IAM CI/CD Module] -. Independent .-> A
@@ -54,7 +55,7 @@ graph TD
 This is the heart of the infrastructure. It contains no raw resource drafts; instead, it wires the modules together cleanly. 
 Key highlights:
 *   **Providers:** Leverages 3 core providers (`aws`, `kubernetes`, `helm`).
-*   **Helm Releases:** We avoid manual `aws_lb` provisioning (which is an anti-pattern in modern Kubernetes). Instead, we inject the `aws-load-balancer-controller` and `external-secrets` operator into the cluster, granting the EKS environment the autonomy to manage its own AWS resources.
+*   **Helm Releases:** We avoid manual `aws_lb` provisioning (which is an anti-pattern in modern Kubernetes). Instead, we inject the `aws-load-balancer-controller`, `external-secrets` operator, and the `kube-prometheus-stack` into the cluster, granting the EKS environment the autonomy to manage its own AWS resources and self-monitoring.
 *   **KMS Encryption:** A centralized Customer Managed Key (`aws_kms_key.main`) is generated and passed to all stateful modules to guarantee Data-At-Rest Encryption by default.
 
 ### 2. `variables.tf` & `outputs.tf`

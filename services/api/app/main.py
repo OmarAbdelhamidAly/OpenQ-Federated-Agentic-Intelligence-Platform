@@ -89,6 +89,10 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         
         await _safe_exec("ALTER TABLE analysis_results ADD COLUMN IF NOT EXISTS embedding JSON NULL")
         await _safe_exec("ALTER TABLE analysis_results ADD COLUMN IF NOT EXISTS evaluation_metrics JSON NULL")
+        await _safe_exec("ALTER TABLE analysis_results ADD COLUMN IF NOT EXISTS prompt_tokens INTEGER DEFAULT 0")
+        await _safe_exec("ALTER TABLE analysis_results ADD COLUMN IF NOT EXISTS completion_tokens INTEGER DEFAULT 0")
+        await _safe_exec("ALTER TABLE analysis_results ADD COLUMN IF NOT EXISTS total_tokens INTEGER DEFAULT 0")
+        await _safe_exec("ALTER TABLE analysis_results ADD COLUMN IF NOT EXISTS estimated_cost FLOAT DEFAULT 0.0")
         
         # Try to add the FK reference safely without Postgres logging errors if it exists
         await _safe_exec("""
@@ -148,10 +152,26 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
 from prometheus_client import Gauge
 
-# Global RAG Quality Gauges
-rag_relevance_gauge = Gauge("openq_rag_avg_relevance", "Average relevance of evaluated RAG queries.")
-rag_utilization_gauge = Gauge("openq_rag_avg_utilization", "Average utilization rate of fetched chunks.")
-rag_attribution_gauge = Gauge("openq_rag_attribution_rate", "Attribution rate for the Universal RAG pipeline.")
+# LLMOps & Cost Tracking Gauges
+llm_total_tokens_gauge = Gauge("openq_llm_tokens_total", "Total LLM tokens consumed across all workers")
+llm_estimated_cost_gauge = Gauge("openq_llm_estimated_cost_usd", "Total estimated cost of LLM inference in USD")
+
+# Global RAG Quality Gauges (Galileo Metrics Mapping)
+# Retrieval Quality
+rag_context_relevance_gauge = Gauge("openq_rag_context_relevance", "Context Relevance score")
+rag_instruction_adherence_gauge = Gauge("openq_rag_instruction_adherence", "Instruction Adherence score")
+
+# Hallucinations
+rag_chunk_attribution_gauge = Gauge("openq_rag_chunk_attribution", "Chunk Attribution score")
+rag_context_adherence_gauge = Gauge("openq_rag_context_adherence", "Context Adherence score")
+rag_completeness_gauge = Gauge("openq_rag_completeness", "Completeness score")
+rag_correctness_gauge = Gauge("openq_rag_correctness", "Correctness score")
+rag_chunk_attribution_utilization_gauge = Gauge("openq_rag_chunk_attribution_utilization", "Chunk Attribution Utilization score")
+
+# Privacy, Security & Malicious Use
+rag_pii_gauge = Gauge("openq_rag_pii", "PII Detection score")
+rag_toxicity_gauge = Gauge("openq_rag_toxicity_detection", "Toxicity Detection score")
+rag_prompt_injection_gauge = Gauge("openq_rag_prompt_injection", "Prompt Injection score")
 
 async def update_rag_metrics_loop():
     from app.infrastructure.database.postgres import async_session_factory
@@ -160,19 +180,51 @@ async def update_rag_metrics_loop():
     while True:
         try:
             async with async_session_factory() as db:
-                res = await db.execute(text("""
+                # 1. Update Evaluation Metrics (Averages)
+                res_eval = await db.execute(text("""
                     SELECT 
-                        AVG(CAST(NULLIF(evaluation_metrics->>'avg_relevance', 'NaN') AS FLOAT)),
-                        AVG(CAST(NULLIF(evaluation_metrics->>'avg_utilization', 'NaN') AS FLOAT)),
-                        AVG(CAST(NULLIF(evaluation_metrics->>'attribution_rate', 'NaN') AS FLOAT))
+                        AVG(CAST(NULLIF(evaluation_metrics->>'context_relevance', 'NaN') AS FLOAT)),
+                        AVG(CAST(NULLIF(evaluation_metrics->>'instruction_adherence', 'NaN') AS FLOAT)),
+                        AVG(CAST(NULLIF(evaluation_metrics->>'chunk_attribution', 'NaN') AS FLOAT)),
+                        AVG(CAST(NULLIF(evaluation_metrics->>'context_adherence', 'NaN') AS FLOAT)),
+                        AVG(CAST(NULLIF(evaluation_metrics->>'completeness', 'NaN') AS FLOAT)),
+                        AVG(CAST(NULLIF(evaluation_metrics->>'correctness', 'NaN') AS FLOAT)),
+                        AVG(CAST(NULLIF(evaluation_metrics->>'chunk_attribution_utilization', 'NaN') AS FLOAT)),
+                        AVG(CAST(NULLIF(evaluation_metrics->>'pii', 'NaN') AS FLOAT)),
+                        AVG(CAST(NULLIF(evaluation_metrics->>'toxicity_detection', 'NaN') AS FLOAT)),
+                        AVG(CAST(NULLIF(evaluation_metrics->>'prompt_injection', 'NaN') AS FLOAT))
                     FROM analysis_results 
                     WHERE evaluation_metrics IS NOT NULL
                 """))
-                row = res.fetchone()
-                if row and row[0] is not None:
-                    rag_relevance_gauge.set(row[0])
-                    rag_utilization_gauge.set(row[1])
-                    rag_attribution_gauge.set(row[2])
+                row_eval = res_eval.fetchone()
+                if row_eval:
+                    if row_eval[0] is not None: rag_context_relevance_gauge.set(row_eval[0])
+                    if row_eval[1] is not None: rag_instruction_adherence_gauge.set(row_eval[1])
+                    if row_eval[2] is not None: rag_chunk_attribution_gauge.set(row_eval[2])
+                    if row_eval[3] is not None: rag_context_adherence_gauge.set(row_eval[3])
+                    if row_eval[4] is not None: rag_completeness_gauge.set(row_eval[4])
+                    if row_eval[5] is not None: rag_correctness_gauge.set(row_eval[5])
+                    if row_eval[6] is not None: rag_chunk_attribution_utilization_gauge.set(row_eval[6])
+                    if row_eval[7] is not None: rag_pii_gauge.set(row_eval[7])
+                    if row_eval[8] is not None: rag_toxicity_gauge.set(row_eval[8])
+                    if row_eval[9] is not None: rag_prompt_injection_gauge.set(row_eval[9])
+
+                # 2. Update LLMOps Tokens and Cost (Sums)
+                try:
+                    res_tokens = await db.execute(text("""
+                        SELECT 
+                            SUM(total_tokens),
+                            SUM(estimated_cost)
+                        FROM analysis_results
+                    """))
+                    row_tokens = res_tokens.fetchone()
+                    if row_tokens:
+                        if row_tokens[0] is not None: llm_total_tokens_gauge.set(row_tokens[0])
+                        if row_tokens[1] is not None: llm_estimated_cost_gauge.set(row_tokens[1])
+                except Exception as e:
+                    # Ignore if columns don't exist yet (before auto-migration completes)
+                    pass
+
         except Exception as e:
             logger.error("rag_metrics_update_error", error=str(e))
         

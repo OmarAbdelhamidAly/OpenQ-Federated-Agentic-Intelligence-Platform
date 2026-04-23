@@ -113,6 +113,27 @@ resource "helm_release" "external_secrets" {
   depends_on = [module.eks]
 }
 
+# 3. Kube-Prometheus-Stack (Observability Layer)
+resource "helm_release" "kube_prometheus_stack" {
+  name             = "prometheus-stack"
+  repository       = "https://prometheus-community.github.io/helm-charts"
+  chart            = "kube-prometheus-stack"
+  namespace        = "monitoring"
+  create_namespace = true
+
+  set {
+    name  = "grafana.adminPassword"
+    value = "admin" # In production, this should be pulled from Secrets Manager
+  }
+  
+  set {
+    name  = "alertmanager.enabled"
+    value = "false"
+  }
+
+  depends_on = [module.eks]
+}
+
 # 1. Networking Layer
 module "vpc" {
   source       = "./modules/vpc"

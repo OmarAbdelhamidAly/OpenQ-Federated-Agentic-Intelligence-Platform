@@ -71,6 +71,8 @@ services:
       NEO4J_apoc_import_file_enabled: "true"
       NEO4J_apoc_import_file_use__neo4j__config: "true"
       NEO4J_dbms_security_procedures_unrestricted: apoc.*, gds.*
+      NEO4J_server_metrics_prometheus_enabled: "true"
+      NEO4J_server_metrics_prometheus_endpoint: "0.0.0.0:2004"
       NEO4J_PLUGINS: '["apoc", "graph-data-science"]'
     volumes: [neo4jdata:/data]
     networks: [backend-net]
@@ -409,6 +411,36 @@ services:
     networks: [backend-net]
     depends_on:
       redis: { condition: service_healthy }
+
+  postgres-exporter:
+    image: prometheuscommunity/postgres-exporter:latest
+    container_name: analyst-postgres-exporter
+    restart: unless-stopped
+    environment:
+      DATA_SOURCE_NAME: postgresql://postgres:postgres@postgres:5432/analyst_agent?sslmode=disable
+    ports: ["9187:9187"]
+    networks: [backend-net]
+    depends_on:
+      postgres: { condition: service_healthy }
+
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor:latest
+    container_name: analyst-cadvisor
+    restart: unless-stopped
+    ports: ["8080:8080"]
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:rw
+      - /sys:/sys:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+    networks: [backend-net]
+
+  node-exporter:
+    image: prom/node-exporter:latest
+    container_name: analyst-node-exporter
+    restart: unless-stopped
+    ports: ["9100:9100"]
+    networks: [backend-net]
 
 
 

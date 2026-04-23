@@ -26,3 +26,18 @@ scrape_configs:
   - job_name: 'cadvisor'
     static_configs:
       - targets: ['cadvisor:8080']
+
+  # Postgres Exporter
+  - job_name: 'postgres'
+    static_configs:
+      - targets: ['postgres-exporter:9187']
+
+  # Qdrant Vector DB
+  - job_name: 'qdrant'
+    static_configs:
+      - targets: ['qdrant:6333']
+
+  # Neo4j Graph DB
+  - job_name: 'neo4j'
+    static_configs:
+      - targets: ['neo4j:2004']

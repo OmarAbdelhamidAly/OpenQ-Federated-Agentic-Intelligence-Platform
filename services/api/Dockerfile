@@ -21,7 +21,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends --fix-missing \
 
 WORKDIR /build
 COPY requirements.txt .
-RUN pip install --no-cache-dir --default-timeout=100 --retries=10 --prefix=/install -r requirements.txt
+RUN pip install --no-cache-dir --upgrade pip && \
+    pip install --no-cache-dir --default-timeout=1000 --retries 10 --prefix=/install -r requirements.txt
 
 # ── Stage 2: Runtime ──────────────────────────────────────────
 FROM python:3.11-slim

@@ -1,5 +1,11 @@
 FROM python:3.11-slim
 
+# Force HTTPS mirrors to bypass ISP HTTP redirect issues
+RUN echo 'Acquire::http::Pipeline-Depth "0";' > /etc/apt/apt.conf.d/99fixbadproxy && \
+    echo 'Acquire::Retries "5";' >> /etc/apt/apt.conf.d/99fixbadproxy && \
+    sed -i 's|http://deb.debian.org|https://deb.debian.org|g' /etc/apt/sources.list.d/*.sources 2>/dev/null || true && \
+    sed -i 's|http://deb.debian.org|https://deb.debian.org|g' /etc/apt/sources.list 2>/dev/null || true
+
 # Install system dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \

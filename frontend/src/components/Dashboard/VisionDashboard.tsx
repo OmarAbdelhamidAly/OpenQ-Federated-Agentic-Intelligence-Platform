@@ -2,8 +2,6 @@ import React from 'react';
 import { motion } from 'framer-motion';
 import { 
   Camera, 
-  Eye, 
-  Activity, 
   Clock, 
   BrainCircuit,
   AlertCircle,
@@ -14,7 +12,7 @@ import ReactECharts from 'echarts-for-react';
 import { useVision } from '../../hooks/useVision';
 
 const VisionDashboard: React.FC = () => {
-  const { cameras, loading, error } = useVision();
+  const { cameras, loading } = useVision();
   const container = {
     hidden: { opacity: 0 },
     show: {

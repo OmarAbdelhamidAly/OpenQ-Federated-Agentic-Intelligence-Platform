@@ -1,20 +1,17 @@
 import React from 'react';
 import { motion } from 'framer-motion';
 import { 
-  Building2, 
   Target, 
   ShieldCheck, 
   Users, 
-  BarChart3, 
   TrendingUp,
-  Network,
-  Loader2
+  Network
 } from 'lucide-react';
 import ReactECharts from 'echarts-for-react';
 import { useCorporate } from '../../hooks/useCorporate';
 
 const CorporateDashboard: React.FC = () => {
-  const { stats, loading, error } = useCorporate();
+  const { stats } = useCorporate();
   const container = {
     hidden: { opacity: 0 },
     show: {

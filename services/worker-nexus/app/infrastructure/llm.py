@@ -1,7 +1,7 @@
 """Centralized LLM Factory - STRICT OPENROUTER MODE.
 """
 import structlog
-from typing import Optional, List
+from typing import Optional
 from langchain_openai import ChatOpenAI
 from langchain_core.language_models.chat_models import BaseChatModel
 from app.infrastructure.config import settings
@@ -28,9 +28,9 @@ def get_llm(temperature: float = 0, model: Optional[str] = None) -> BaseChatMode
         max_tokens=4096,
         max_retries=3,
         default_headers={
-            "HTTP-Referer": "https://insightify.ai",
-            "X-Title": "Insightify Strategic Nexus"
+            "HTTP-Referer": settings.OPENROUTER_SITE_URL,
+            "X-Title": settings.OPENROUTER_APP_TITLE,
         },
     )
-    
+
     return llm

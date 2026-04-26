@@ -35,7 +35,7 @@ class OrgNode(Base):
         String(50), default="department" # e.g., "headquarters", "branch", "department", "team"
     )
 
-    metadata: Mapped[Optional[Dict[str, Any]]] = mapped_column(JSON, nullable=True)
+    node_metadata: Mapped[Optional[Dict[str, Any]]] = mapped_column(JSON, nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)

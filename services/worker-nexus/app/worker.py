@@ -46,7 +46,7 @@ async def _execute_nexus(job_id: str):
     from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
     from sqlalchemy.orm import sessionmaker
     from sqlalchemy import text
-    from app.use_cases.nexus.run_pipeline import run_nexus_pipeline
+    from app.use_cases.retrieval.run_pipeline import run_nexus_pipeline
 
     DATABASE_URL = os.getenv("DATABASE_URL")
     if not DATABASE_URL:
@@ -120,19 +120,3 @@ async def _execute_nexus(job_id: str):
     finally:
         await engine.dispose()
 
-@celery_app.task(name="nexus.discovery", queue="pillar.nexus")
-def discovery_task(source_id: str):
-    """Background task to run the Neo4j 'Stitching' engine."""
-    try:
-        logger.info("nexus_discovery_start", source_id=source_id)
-        asyncio.run(_run_discovery(source_id))
-        logger.info("nexus_discovery_complete", source_id=source_id)
-        return {"status": "success", "source_id": source_id}
-    except Exception as e:
-        logger.error("nexus_discovery_failed", error=str(e))
-        return {"status": "error", "error": str(e)}
-
-async def _run_discovery(source_id: str):
-    """Async inner function to ensure adapter is created in the correct event loop."""
-    adapter = Neo4jAdapter()
-    await adapter.execute_nexus_bridge(source_id)

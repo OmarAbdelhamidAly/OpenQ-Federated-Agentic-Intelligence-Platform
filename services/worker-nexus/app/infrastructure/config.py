@@ -30,6 +30,8 @@ class Settings(BaseSettings):
     OPENROUTER_API_KEY: str = ""
     GROQ_API_KEY: str = ""
     GEMINI_API_KEY: str = ""
+    OPENROUTER_SITE_URL: str = "https://openq.ai"
+    OPENROUTER_APP_TITLE: str = "OpenQ Strategic Nexus"
     OLLAMA_BASE_URL: str = "http://ollama:11434"
     LLM_MODEL: str = "google/gemini-flash-1.5-8b"
     LLM_MODEL_CODE: str = "deepseek/deepseek-chat-v3-0324"
@@ -43,8 +45,6 @@ class Settings(BaseSettings):
     QDRANT_URL: str = "http://localhost:6333"
     QDRANT_API_KEY: str = ""
     
-    # ── OpenRouter ────────────────────────────────────────────
-    OPENROUTER_API_KEY: str = ""
 
     # ── Logging ───────────────────────────────────────────────
     LOG_LEVEL: str = "INFO"

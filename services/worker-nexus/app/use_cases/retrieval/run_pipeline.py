@@ -1,7 +1,7 @@
 """Entry point for the Strategic Nexus reasoning pipeline."""
 import structlog
 from typing import Any, Dict
-from app.modules.nexus.agents.pillar_orchestrator import create_nexus_graph
+from app.modules.retrieval.workflow import create_nexus_graph
 
 logger = structlog.get_logger(__name__)
 

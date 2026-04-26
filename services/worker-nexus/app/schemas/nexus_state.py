@@ -1,27 +1,15 @@
-from typing import List, Annotated, TypedDict, Dict, Any, Optional
-from operator import add
+from typing import List, TypedDict, Dict, Any
 
-class NexusState(TypedDict):
-    """LangGraph State for Universal Strategic Nexus."""
-    source_ids: List[str]
-    tenant_id: str
+class NexusState(TypedDict, total=False):
     question: str
-    job_id: Optional[str]
-    
-    # ── Memory Layers ──────────────────────────────────────────
-    chat_history: Annotated[List[Dict[str, str]], add]
-    running_summary: str
-    episodic_context: str
-    procedural_instinct: str
-    
-    # Reasoning Trace
-    discovery_logs: Annotated[List[str], add]
-    pillar_responses: Annotated[List[Dict[str, Any]], add]
-    
-    # Final Output
-    final_synthesis: str
-    
-    # Routing & Flow
-    next_step: str
+    fusion_queries: List[str]
+    source_ids: List[str]
+    job_id: str
+    tenant_id: str
+    thinking_steps: List[Dict[str, str]]
+    graph_context: Dict[str, Any]     # rich graph data from Neo4j
+    meta_context: Dict[str, Any]      # schema/metadata from Postgres
+    reranked_entities: List[str]       # top entities after agentic retrieval
+    synthesis: str
     status: str
-    retry_count: int
+    evaluation_metrics: Dict[str, Any]

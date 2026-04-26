@@ -92,7 +92,7 @@ async def index_audio_content(payload: Dict[str, Any]) -> None:
             )
             graph.relationships.append(rel_next)
         
-        # 4. Attach Pre-extracted Entities
+        # 4. Attach Pre-extracted Entities and Speakers
         entities = chunk_data.get("entities", [])
         for ent in entities:
             ent_label = ent.get("type", "Entity")
@@ -104,8 +104,17 @@ async def index_audio_content(payload: Dict[str, Any]) -> None:
             )
             graph.nodes.append(entity_node)
             
-            rel_to_ent = builder.create_node_to_chunk_rel(entity_node, chunk_info["id"])
-            graph.relationships.append(rel_to_ent)
+            if ent_label == "Speaker":
+                rel = Relationship(
+                    type="SPOKE",
+                    start_node=entity_node,
+                    end_node=chunk_node,
+                    properties={}
+                )
+                graph.relationships.append(rel)
+            else:
+                rel_to_ent = builder.create_node_to_chunk_rel(entity_node, chunk_info["id"])
+                graph.relationships.append(rel_to_ent)
             
         prev_chunk_node = chunk_node
 

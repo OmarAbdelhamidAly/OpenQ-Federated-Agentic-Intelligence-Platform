@@ -63,13 +63,20 @@ def _execute_gds_sync_logic() -> Dict[str, Any]:
         # We use UNDIRECTED for structural similarity as the flow of information
         # in a Knowledge Graph is often bidirectional for context.
         G = session.project(
-            ["Document", "Chunk", "Entity", "Class", "Function", "Table", "Column"],
+            ["Document", "Chunk", "Entity", "Class", "Function", "Table", "Column", "Speaker", "Turn"],
             {
                 "FROM_DOCUMENT": {"orientation": "UNDIRECTED"},
                 "NEXT_CHUNK": {"orientation": "DIRECTED"},
-                "REFERS_TO": {"orientation": "UNDIRECTED"},
-                "HAS_CLASS": {"orientation": "UNDIRECTED"},
-                "REPRESENTS_DATA": {"orientation": "UNDIRECTED"}
+                "DEFINED_IN": {"orientation": "UNDIRECTED"},
+                "HAS_FUNCTION": {"orientation": "UNDIRECTED"},
+                "CALLS": {"orientation": "DIRECTED"},
+                "IMPORTS": {"orientation": "DIRECTED"},
+                "HAS_COLUMN": {"orientation": "UNDIRECTED"},
+                "FOREIGN_KEY_TO": {"orientation": "DIRECTED"},
+                "SPOKE": {"orientation": "UNDIRECTED"},
+                "MENTIONS": {"orientation": "UNDIRECTED"},
+                "FROM_SESSION": {"orientation": "UNDIRECTED"},
+                "NEXT_TURN": {"orientation": "DIRECTED"}
             }
         )
 
@@ -111,7 +118,7 @@ def _execute_gds_sync_logic() -> Dict[str, Any]:
             pipe.addRandomForest(numberOfDecisionTrees=10)
             
             logger.info("gds_lp_training_started")
-            model, _ = pipe.train(G, modelName=model_name, targetRelationshipType="REFERS_TO")
+            model, _ = pipe.train(G, modelName=model_name, targetRelationshipType="MENTIONS")
             
             # 4. Predict and Mutate
             # Apply the model to predict missing links across the whole graph

@@ -14,8 +14,10 @@ async def run_entity_resolution() -> dict:
     adapter = Neo4jAdapter()
 
     # FuzzyMatchResolver uses RapidFuzz under the hood.
+    # Scoped strictly to 'Entity' nodes to prevent catastrophic merging of structurally distinct nodes (e.g. Table and Document).
     resolver = FuzzyMatchResolver(
         driver=adapter.driver,
+        node_label="Entity",
         resolve_properties=["name", "title"],
         similarity_threshold=0.85
     )

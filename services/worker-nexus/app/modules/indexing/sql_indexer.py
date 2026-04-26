@@ -21,10 +21,12 @@ sql_schema = schema_builder.run(
         NodeType(label="Column", properties=[])
     ],
     relationship_types=[
-        RelationshipType(label="HAS_COLUMN")
+        RelationshipType(label="HAS_COLUMN"),
+        RelationshipType(label="FOREIGN_KEY_TO")
     ],
     patterns=[
-        ("Table", "HAS_COLUMN", "Column")
+        ("Table", "HAS_COLUMN", "Column"),
+        ("Column", "FOREIGN_KEY_TO", "Column")
     ]
 )
 
@@ -43,6 +45,7 @@ async def index_sql_content(payload: Dict[str, Any]) -> None:
     
     tables_data = payload.get("tables", [])
     columns_data = payload.get("columns", [])
+    foreign_keys_data = payload.get("foreign_keys", [])
     
     if not tables_data and not columns_data:
         logger.warning("sql_indexer_empty_payload", source_id=source_id)
@@ -52,8 +55,9 @@ async def index_sql_content(payload: Dict[str, Any]) -> None:
     driver = adapter.driver
     graph = Neo4jGraph()
     
-    # Track table nodes
+    # Track nodes for relationship linking
     table_nodes = {}
+    column_nodes = {}
     
     # 2. Build Table Nodes
     for t in tables_data:
@@ -75,11 +79,35 @@ async def index_sql_content(payload: Dict[str, Any]) -> None:
         })
         graph.nodes.append(node)
         
+        
         if table_name and table_name in table_nodes:
             rel = Relationship(
                 type="HAS_COLUMN",
                 start_node=table_nodes[table_name],
                 end_node=node,
+                properties={}
+            )
+            graph.relationships.append(rel)
+            
+        # Track column node using a unique key (table_name.column_name)
+        if table_name:
+            column_nodes[f"{table_name}.{name}"] = node
+
+    # 3.5 Build Foreign Key Relationships
+    for fk in foreign_keys_data:
+        from_table = fk.get("from_table")
+        from_column = fk.get("from_column")
+        to_table = fk.get("to_table")
+        to_column = fk.get("to_column")
+        
+        from_key = f"{from_table}.{from_column}"
+        to_key = f"{to_table}.{to_column}"
+        
+        if from_key in column_nodes and to_key in column_nodes:
+            rel = Relationship(
+                type="FOREIGN_KEY_TO",
+                start_node=column_nodes[from_key],
+                end_node=column_nodes[to_key],
                 properties={}
             )
             graph.relationships.append(rel)

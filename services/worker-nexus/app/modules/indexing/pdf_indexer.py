@@ -25,6 +25,7 @@ async def index_pdf_content(payload: Dict[str, Any]) -> None:
                 "id": "uuid5-hash-1", 
                 "text": "...", 
                 "embedding": [...], 
+                "metadata": {"page_number": 5, "section": "Introduction"},
                 "entities": [
                     {"name": "AuthService", "type": "Technology"},
                     ...
@@ -72,12 +73,16 @@ async def index_pdf_content(payload: Dict[str, Any]) -> None:
     prev_chunk_node = None
     
     for chunk_data in chunks_data:
+        # Extract optional arbitrary metadata (e.g., page_number, section)
+        chunk_metadata = chunk_data.get("metadata", {})
+        
         # Create Chunk Node
         chunk_info = {
             "id": chunk_data.get("id"),
             "text": chunk_data.get("text"),
             "embedding": chunk_data.get("embedding"),
-            "source_id": source_id
+            "source_id": source_id,
+            **chunk_metadata  # Inject all metadata dynamically
         }
         chunk_node = builder.create_chunk_node(chunk_info)
         graph.nodes.append(chunk_node)

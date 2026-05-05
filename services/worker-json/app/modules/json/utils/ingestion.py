@@ -1,3 +1,4 @@
+"""
 Enables other SQL-native tools to explore non-SQL sources.
 """
 import pandas as pd

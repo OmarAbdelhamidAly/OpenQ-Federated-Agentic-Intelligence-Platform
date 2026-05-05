@@ -14,6 +14,7 @@ from typing import Any, Dict
 
 logger = structlog.get_logger(__name__)
 
+from app.infrastructure.neo4j_adapter import Neo4jAdapter
 from app.infrastructure.llm import get_llm
 
 from app.domain.analysis.entities import AnalysisState
@@ -39,7 +40,7 @@ Your goal is to transform raw data into a premium, executive-grade analytical na
 - DO NOT use JSON-escaped quotes like \" inside the text; use single quotes ' or avoid them.
 
 ### CONTEXTUAL MEMORY
-{running_summary}
+{historical_context}
 
 ### INPUT DATA
 - **User Question**: {question}
@@ -86,6 +87,10 @@ async def insight_agent(state: AnalysisState) -> Dict[str, Any]:
             pass
         return q
 
+    # Fetch historical context
+    db = Neo4jAdapter()
+    historical_context = await db.get_agent_memory(state.get("user_id", "default_user"), state.get("source_id", ""))
+
     prompt = INSIGHT_PROMPT.format(
         question=_sanitize_question(state.get("question") or ""),
         intent=state.get("intent") or "comparison",
@@ -93,7 +98,7 @@ async def insight_agent(state: AnalysisState) -> Dict[str, Any]:
         kb_context=analysis.get("kb_context") or "None provided.",
         data=json.dumps(analysis.get("data", [])[:20], indent=2, default=str),
         complexity_instruction=complexity_instruction,
-        running_summary=state.get("running_summary", "No previous context.")
+        historical_context=historical_context
     )
 
     try:

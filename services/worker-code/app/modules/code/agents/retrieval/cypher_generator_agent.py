@@ -6,6 +6,7 @@ from app.domain.analysis.entities import CodeAnalysisState
 from app.infrastructure.config import settings
 from app.modules.code.utils.procedural_memory import procedural_memory
 from app.modules.code.utils.episodic_memory import episodic_memory
+from app.infrastructure.neo4j_adapter import Neo4jAdapter
 
 logger = structlog.get_logger(__name__)
 
@@ -25,7 +26,7 @@ You are an expert Neo4j Cypher developer analysing a codebase knowledge graph.
 Generate a single valid Cypher query that answers the user's question, taking into account the context of the previous conversation.
 
 Previous Conversation Context:
-{running_summary}
+{historical_context}
 
 User's Latest Question:
 {question}
@@ -77,7 +78,11 @@ async def cypher_generator_agent(state: CodeAnalysisState) -> dict:
     question        = state.get("question", "")
     schema          = state.get("graph_schema", "")
     reflection      = state.get("reflection_context", "")
-    running_summary = state.get("running_summary", "No previous context.")
+    user_id         = state.get("user_id", "default_user")
+    
+    # Fetch Graph Memory
+    db = Neo4jAdapter()
+    historical_context = await db.get_agent_memory(user_id, state.get("source_id", ""))
 
     reflection_block = (
         f"Previous attempt failed — please fix:\n{reflection}"
@@ -106,7 +111,7 @@ async def cypher_generator_agent(state: CodeAnalysisState) -> dict:
             {
                 "schema":               schema,
                 "question":             question,
-                "running_summary":      running_summary,
+                "historical_context":   historical_context,
                 "reflection_context":   reflection_block,
                 "procedural_instinct":  procedural_instinct,
                 "episodic_context":     episodic_context,

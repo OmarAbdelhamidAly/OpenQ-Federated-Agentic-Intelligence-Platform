@@ -8,7 +8,9 @@ RUN echo 'Acquire::http::Pipeline-Depth "0";' > /etc/apt/apt.conf.d/99fixbadprox
     sed -i 's|http://deb.debian.org|https://deb.debian.org|g' /etc/apt/sources.list.d/*.sources 2>/dev/null || true && \
     sed -i 's|http://deb.debian.org|https://deb.debian.org|g' /etc/apt/sources.list 2>/dev/null || true
 
-RUN apt-get update && apt-get install -y --no-install-recommends --fix-missing \
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    apt-get update && apt-get install -y --no-install-recommends --fix-missing \
     build-essential \
     libpango-1.0-0 \
     libpangocairo-1.0-0 \
@@ -21,8 +23,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends --fix-missing \
 
 WORKDIR /build
 COPY requirements.txt .
-RUN pip install --no-cache-dir --upgrade pip && \
-    pip install --no-cache-dir --default-timeout=1000 --retries 10 --prefix=/install -r requirements.txt
+RUN --mount=type=cache,target=/root/.cache/pip \
+    pip install --upgrade pip && \
+    pip install --default-timeout=1000 --retries 10 --prefix=/install -r requirements.txt
 
 # ── Runtime ───────────────────────────────────────────────────
 FROM python:3.11-slim
@@ -33,7 +36,9 @@ RUN echo 'Acquire::http::Pipeline-Depth "0";' > /etc/apt/apt.conf.d/99fixbadprox
     sed -i 's|http://deb.debian.org|https://deb.debian.org|g' /etc/apt/sources.list.d/*.sources 2>/dev/null || true && \
     sed -i 's|http://deb.debian.org|https://deb.debian.org|g' /etc/apt/sources.list 2>/dev/null || true
 
-RUN apt-get update && apt-get install -y --no-install-recommends --fix-missing \
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    apt-get update && apt-get install -y --no-install-recommends --fix-missing \
     libpango-1.0-0 \
     libpangocairo-1.0-0 \
     libcairo2 \

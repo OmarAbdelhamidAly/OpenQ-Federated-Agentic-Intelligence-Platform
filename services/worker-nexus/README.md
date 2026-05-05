@@ -68,7 +68,7 @@ Data engineering requires 100% precision. This indexer processes structural payl
 
 ### 10. `app/modules/graph_ops/graph_learning.py`
 **The Machine Learning & Topology Maintenance Engine**
-This file represents the absolute cutting-edge of Graph Artificial Intelligence. Interfaces directly with the Neo4j Graph Data Science (GDS) plugin to execute a massive maintenance pipeline that learns from the graph's topology. It projects the rich, cross-pillar schema (including `FOREIGN_KEY_TO`, `CALLS`, `SPOKE`) into an in-memory `GDSMaintenanceSession`. It runs the FastRP (Fast Random Projection) algorithm to generate structural embeddings. It then dynamically trains a Random Forest model using a Link Prediction pipeline (targeting `MENTIONS` relationships) to discover hidden, unmapped connections across different data pillars. It empowers the system to autonomously discover insights that no human explicitly defined.
+This file represents the absolute cutting-edge of Graph Artificial Intelligence. Interfaces directly with the Neo4j Graph Data Science (GDS) plugin to execute a massive maintenance pipeline that learns from the graph's topology. It projects the rich, cross-pillar schema (including `FOREIGN_KEY_TO`, `CALLS`, `SPOKE`) into an in-memory `GDSMaintenanceSession`. **Newly Upgraded:** It now leverages **Event-Driven FastRP (Fast Random Projection)** updates triggered automatically at the end of every worker's data ingestion pipeline. This pre-computes 256-dimensional structural embeddings seamlessly in the background, keeping the graph continuously trained. It then dynamically trains a Random Forest model using a Link Prediction pipeline (targeting `MENTIONS` relationships) to discover hidden, unmapped connections across different data pillars. It empowers the system to autonomously discover insights that no human explicitly defined, without imposing overhead during query time.
 
 ### 11. `app/modules/graph_ops/entity_resolver.py`
 **The Autonomous Deduplication Agent**
@@ -102,3 +102,85 @@ This file is the cornerstone of the Python environment's stability and reproduci
 **The Immutable Infrastructure Definition**
 This file defines the containerization strategy for the Nexus service, enabling it to run as a portable, immutable image on any Kubernetes or Docker cluster. It uses a multi-stage or optimized Debian/Python base image to minimize the attack surface and image size. The Dockerfile handles the installation of critical system-level dependencies required for high-performance AI operations (such as C++ build tools for `RapidFuzz` or `FastEmbed` optimizations). It sets up a non-root user for security best practices and defines the `ENTRYPOINT` that starts the Celery worker process. By encapsulating the entire execution environment into a Docker image, it guarantees that the Nexus service remains isolated, scalable, and resilient to host-level environment drift.
 
+---
+
+## 📢 Technical Marketing & Social Proof
+
+This section contains a ready-to-publish technical LinkedIn post and architecture diagram designed to showcase the engineering depth of the `worker-nexus` service.
+
+### LinkedIn Post Draft
+
+```text
+Most standard RAG pipelines fail the moment a user’s question requires context from a PDF, a SQL database, and a raw Codebase simultaneously. They get lost in the noise of pure Vector Space. 📉
+
+Over the past few weeks, I’ve been architecting the Strategic Nexus Orchestrator for our federated AI platform. We moved away from monolithic RAG scripts and built a Domain-Driven, Multi-Agent Intelligence Hub.
+
+Here is a glimpse under the hood of how the `worker-nexus` operates:
+
+🧠 1. Agentic Routing (The Brain):
+Instead of blindly embedding queries, we implemented an LLM-driven ToolsRetriever. It acts as an autonomous agent, analyzing intent and deciding on-the-fly whether to execute a Semantic Vector Search (via Qdrant) or dynamic Cypher queries for Structural Graph Search (via Neo4j). 
+
+🕸️ 2. Universal Knowledge Graph (Federated Sinks):
+The Nexus acts as the central sink for 13+ microservices. It receives parsed ASTs from our Code workers, schemas from SQL workers, and structured chunks from PDF workers—weaving them into a single Neo4j Graph.
+
+⚙️ 3. Domain-Driven Design (DDD) with LangGraph:
+We decoupled the entire orchestration layer. State transitions, Query Fusion, Context Gathering, and Synthesis are strictly isolated into distinct LangGraph nodes. This ensures our pipelines are deterministic and easily testable.
+
+🛡️ 4. Production-Grade Evaluation:
+Retrieval is nothing without quality control. We integrated Cross-Encoders (ms-marco-MiniLM for Relevance and NLI-DeBERTa for Hallucination detection) directly into the pipeline to ensure our LLMs stay grounded.
+
+The result? An intelligent system that doesn't just "search"—it reasons across diverse data topologies. 
+
+I’d love to hear from other engineers: When dealing with multi-domain enterprise data, do you prefer pushing complexity to the LLM context window, or enforcing strict Graph schemas upfront? Let’s discuss! 👇
+
+#SoftwareEngineering #SystemDesign #ArtificialIntelligence #GraphRAG #Neo4j #LangGraph #Microservices #Backend #Python
+```
+
+### Architecture Diagram (Mermaid)
+
+You can render this diagram using [Mermaid Live Editor](https://mermaid.live/) and attach it as an image to your post.
+
+```mermaid
+graph TD
+    %% Styling
+    classDef user fill:#2d3436,stroke:#74b9ff,stroke-width:2px,color:#fff
+    classDef agent fill:#0984e3,stroke:#74b9ff,stroke-width:2px,color:#fff,font-weight:bold
+    classDef graph node, fill:#6c5ce7,stroke:#a29bfe,stroke-width:2px,color:#fff
+    classDef db fill:#00b894,stroke:#55efc4,stroke-width:2px,color:#fff
+    classDef eval fill:#d63031,stroke:#ff7675,stroke-width:2px,color:#fff
+
+    User["👤 User Query<br>('How does the Auth logic relate to the Users Table?')"]:::user
+    
+    subgraph "worker-nexus (LangGraph DDD Architecture)"
+        Mastermind["🤖 Agentic Mastermind<br>(Gemini 2.0 Flash)"]:::agent
+        Fusion["🔗 Query Fusion & Expansion"]:::agent
+        Synthesis["🧠 Strategic Synthesis Layer"]:::agent
+        
+        subgraph "ToolsRetriever Layer"
+            VecSearch["📊 QdrantNeo4jRetriever<br>(e5-large Semantic Search)"]:::graph
+            CypSearch["🕸️ Text2CypherRetriever<br>(Structural Graph Search)"]:::graph
+        end
+        
+        Evaluator["🛡️ Cross-Encoder Evaluator<br>(ms-marco & NLI DeBERTa)"]:::eval
+    end
+
+    subgraph "Federated Sinks (Data Tier)"
+        Neo4j[("🗄️ Neo4j Knowledge Graph<br>(ASTs, SQL Schemas, PDFs)")]:::db
+        Qdrant[("🗂️ Qdrant Vector DB<br>(1024d FastEmbeds)")]:::db
+    end
+
+    %% Flow
+    User -->|Sends Request| Mastermind
+    Mastermind -->|Decomposes Query| Fusion
+    Fusion --> VecSearch
+    Fusion --> CypSearch
+    
+    VecSearch -->|Fetches nearest chunks| Qdrant
+    CypSearch -->|Executes dynamic Cypher| Neo4j
+    
+    Qdrant -.->|Returns Vectors| Evaluator
+    Neo4j -.->|Returns Sub-graphs| Evaluator
+    
+    Evaluator -->|Scores Relevance & Hallucinations| Synthesis
+    Synthesis -->|Generates Final Response| User
+```

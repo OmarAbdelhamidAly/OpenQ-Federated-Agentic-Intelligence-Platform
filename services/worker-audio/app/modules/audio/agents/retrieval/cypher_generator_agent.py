@@ -8,6 +8,7 @@ Supports:
 """
 import structlog
 from langchain_core.prompts import ChatPromptTemplate
+from app.infrastructure.neo4j_adapter import Neo4jAdapter
 from app.infrastructure.llm import get_llm
 from app.domain.analysis.entities import AudioAnalysisState
 from app.infrastructure.config import settings

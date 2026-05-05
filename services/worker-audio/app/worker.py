@@ -166,6 +166,15 @@ async def _async_run_pipeline(job_id: str, **kwargs) -> dict:
             logger.info("audio_triggering_semantic_weaver", job_id=job_id)
             try:
                 await run_semantic_weaver(str(job.data_source_id))
+                
+                # ── Trigger FastRP Structural Embeddings ──────────────────
+                try:
+                    from app.infrastructure.neo4j_adapter import Neo4jAdapter
+                    adapter = Neo4jAdapter()
+                    logger.info("triggering_fastrp_structural_embeddings", source_id=str(job.data_source_id))
+                    await adapter.generate_structural_embeddings(str(job.data_source_id))
+                except Exception as gds_err:
+                    logger.warning("fastrp_generation_failed_ignoring", source_id=str(job.data_source_id), error=str(gds_err))
             except Exception as e:
                 logger.error("audio_semantic_weaver_failed_but_ignoring", job_id=job_id, error=str(e))
 

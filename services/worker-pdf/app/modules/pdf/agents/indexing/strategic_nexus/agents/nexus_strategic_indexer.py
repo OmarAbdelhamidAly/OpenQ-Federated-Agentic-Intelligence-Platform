@@ -172,6 +172,13 @@ async def strategic_nexus_indexer(source_id: str) -> Dict[str, Any]:
         })
     await neo4j.batch_upsert_entities(source_id, entities_to_sync)
 
+    # ── Trigger FastRP Structural Embeddings ──────────────────
+    try:
+        logger.info("triggering_fastrp_structural_embeddings", source_id=source_id)
+        await neo4j.generate_structural_embeddings(source_id)
+    except Exception as gds_err:
+        logger.warning("fastrp_generation_failed_ignoring", source_id=source_id, error=str(gds_err))
+
     # 5. Finalize DataSource Status
     async with async_session_factory() as db:
         await db.execute(

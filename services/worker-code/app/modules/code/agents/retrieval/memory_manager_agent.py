@@ -4,65 +4,100 @@ from langchain_core.prompts import ChatPromptTemplate
 from app.infrastructure.llm import get_llm
 from app.infrastructure.config import settings
 from app.domain.analysis.entities import CodeAnalysisState
+from app.infrastructure.neo4j_adapter import Neo4jAdapter
 
 logger = structlog.get_logger(__name__)
 
 async def memory_manager_agent(state: CodeAnalysisState) -> Dict[str, Any]:
     """
-    Manages the sliding window memory for the Codebase Analyst using centralized LLM factory.
-    
-    1. Appends the latest interaction to chat_history.
-    2. If history exceeds MAX_HISTORY, summarizes the oldest ones.
-    3. Updates running_summary.
+    Manages the short-term state and extracts long-term facts/entities to Neo4j.
     """
     source_id = state.get("source_id")
+    tenant_id = state.get("tenant_id", "default_tenant")
+    user_id = state.get("user_id", "default_user")
+    
     logger.info("memory_manager_agent_started", source_id=source_id)
     
     question_text = state.get("question", "")
     insight_report = state.get("insight_report", "")
     
-    # Load previously accumulated history from state
+    # 1. Update strict Short-Term Window (Last 4 turns only)
     current_history = state.get("chat_history") or []
-    
-    # Append the latest turn
     if question_text:
         current_history.append({"role": "user", "content": question_text})
     if insight_report:
         current_history.append({"role": "assistant", "content": insight_report})
-    
-    # Sliding Window Configuration
-    MAX_HISTORY = 4 # Keep last 2 full conversation turns
-    running_summary = state.get("running_summary", "")
-    
-    new_history = current_history
-    
-    if len(current_history) > MAX_HISTORY:
-        fallen_messages = current_history[:-MAX_HISTORY]
-        new_history = current_history[-MAX_HISTORY:]
         
-        # Summarize fallen messages combined with old running summary
-        fallen_text = "\n".join([f"{msg['role'].upper()}: {msg.get('content', '')}" for msg in fallen_messages])
-        
-        # Use centralized LLM factory with specific instructions for summarization
-        llm = get_llm(temperature=0, model=settings.LLM_MODEL_FAST)
-        prompt = ChatPromptTemplate.from_messages([
-            ("system", "You are an AI memory archivist. Condense the past conversation into a succinct running summary. "
-                       "Combine the existing summary (if any) with the newly provided older chat logs to form ONE cohesive paragraph. "
-                       "Retain crucial context (e.g. important entities, file names discussed, main technical context). "
-                       "Only output the summary text, nothing else."),
-            ("user", f"Existing Summary: {running_summary}\n\nOlder logs to integrate:\n{fallen_text}")
-        ])
-        
+    MAX_SHORT_TERM = 4
+    new_history = current_history[-MAX_SHORT_TERM:] if len(current_history) > MAX_SHORT_TERM else current_history
+    
+    # 2. Extract and Store Long-Term Memory in Neo4j
+    if question_text and insight_report:
         try:
+            llm = get_llm(temperature=0, model=settings.LLM_MODEL_FAST)
+            prompt = ChatPromptTemplate.from_messages([
+                ("system", 
+                 "You are an AI Memory Extractor. Extract the most important fact or insight from the conversation.\n"
+                 "Output ONLY a valid JSON object with the following structure:\n"
+                 "{\n"
+                 '  "fact": "A concise summary of the insight or user intent",\n'
+                 '  "entities": [{"name": "entity name", "type": "Class|Function|File|Concept"}]\n'
+                 "}"),
+                ("user", f"User Question: {question_text}\nAssistant Response: {insight_report}")
+            ])
+            
             res = await prompt.pipe(llm).ainvoke({})
-            running_summary = str(res.content if hasattr(res, 'content') else res)
-            logger.info("memory_summary_updated", source_id=source_id)
+            content_str = str(res.content if hasattr(res, 'content') else res).strip()
+            
+            # Clean JSON if wrapped in markdown
+            if content_str.startswith("```json"):
+                content_str = content_str[7:-3]
+            elif content_str.startswith("```"):
+                content_str = content_str[3:-3]
+                
+            memory_data = json.loads(content_str.strip())
+            fact = memory_data.get("fact", "")
+            entities = memory_data.get("entities", [])
+            
+            if fact:
+                db = Neo4jAdapter()
+                query = """
+                MERGE (t:Tenant {id: $tenant_id})
+                MERGE (u:User {id: $user_id})
+                MERGE (u)-[:BELONGS_TO_TENANT]->(t)
+                
+                MERGE (s:Session {source_id: $source_id})
+                MERGE (s)-[:OWNED_BY]->(u)
+                
+                CREATE (m:MemoryFact {
+                    id: randomUUID(),
+                    text: $fact,
+                    timestamp: timestamp(),
+                    domain: 'code'
+                })
+                MERGE (s)-[:PRODUCED_MEMORY]->(m)
+                
+                WITH m, $entities AS ents
+                UNWIND ents AS ent
+                MERGE (e:Entity {name: ent.name})
+                ON CREATE SET e.type = ent.type
+                MERGE (m)-[:MENTIONS {relevance_score: 1.0}]->(e)
+                """
+                params = {
+                    "tenant_id": tenant_id,
+                    "user_id": user_id,
+                    "source_id": source_id,
+                    "fact": fact,
+                    "entities": entities
+                }
+                await db.execute_cypher(query, params)
+                logger.info("neo4j_agent_memory_saved", fact_length=len(fact), entities_count=len(entities))
+                
         except Exception as e:
-            logger.error("memory_summary_failed", error=str(e))
+            logger.error("neo4j_agent_memory_extraction_failed", error=str(e))
     
     logger.info("memory_manager_agent_finished", history_length=len(new_history))
     
     return {
-        "chat_history": new_history,
-        "running_summary": running_summary
+        "chat_history": new_history
     }

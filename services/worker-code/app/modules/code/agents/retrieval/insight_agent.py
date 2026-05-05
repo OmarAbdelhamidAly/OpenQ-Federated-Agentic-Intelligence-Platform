@@ -6,6 +6,7 @@ from app.infrastructure.llm import get_llm
 from app.infrastructure.config import settings
 from app.domain.analysis.entities import CodeAnalysisState
 from app.infrastructure.code_store import CodeStore
+from app.infrastructure.neo4j_adapter import Neo4jAdapter
 
 logger = structlog.get_logger(__name__)
 
@@ -13,7 +14,7 @@ PROMPT = """\
 You are a Principal Software Engineer explaining codebase analysis results to a fellow developer.
 
 Previous Conversation Context:
-{running_summary}
+{historical_context}
 
 User Question:
 {question}
@@ -49,9 +50,13 @@ async def insight_agent(state: CodeAnalysisState) -> dict:
     characters to stay comfortably inside the LLM context window.
     """
     source_id       = state.get("source_id", "")
+    user_id         = state.get("user_id", "default_user")
     question        = state.get("question", "")
     results         = state.get("execution_results", [])
-    running_summary = state.get("running_summary", "No previous context.")
+    
+    # Fetch Graph Memory
+    db = Neo4jAdapter()
+    historical_context = await db.get_agent_memory(user_id, source_id)
 
     logger.info("insight_agent_started", source_id=source_id, result_count=len(results))
 
@@ -85,7 +90,7 @@ async def insight_agent(state: CodeAnalysisState) -> dict:
             "question": question,
             "results": results_str,
             "snippets": snippets_str,
-            "running_summary": running_summary
+            "historical_context": historical_context
         })
 
         return {

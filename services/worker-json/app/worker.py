@@ -268,6 +268,13 @@ async def _execute_source_discovery(source_id: str, user_id: str):
                 await bootstrap_neo4j()
                 adapter = Neo4jAdapter()
                 await adapter.upsert_json_schema(source_id, schema_json)
+                # Trigger FastRP Structural Embeddings
+                try:
+                    logger.info("triggering_fastrp_structural_embeddings", source_id=source_id)
+                    await adapter.generate_structural_embeddings(source_id)
+                except Exception as gds_err:
+                    logger.warning("fastrp_generation_failed_ignoring", source_id=source_id, error=str(gds_err))
+                    
                 await adapter.close()
             except Exception as neo_e:
                 logger.error("json_neo4j_indexing_failed", source_id=source_id, error=str(neo_e))

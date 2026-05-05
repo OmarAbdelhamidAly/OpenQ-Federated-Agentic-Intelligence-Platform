@@ -82,6 +82,13 @@ async def hybrid_indexing_agent(source_id: str) -> Dict[str, Any]:
     neo4j = Neo4jAdapter()
     taxonomy = get_document_taxonomy(context_hint)
     await neo4j.batch_upsert_document_structure(source_id, source_id, chunk_data, taxonomy)
+    
+    # ── Trigger FastRP Structural Embeddings ──────────────────
+    try:
+        logger.info("triggering_fastrp_structural_embeddings", source_id=source_id)
+        await neo4j.generate_structural_embeddings(source_id)
+    except Exception as gds_err:
+        logger.warning("fastrp_generation_failed_ignoring", source_id=source_id, error=str(gds_err))
 
     # 3. Finalize
     async with async_session_factory() as db:

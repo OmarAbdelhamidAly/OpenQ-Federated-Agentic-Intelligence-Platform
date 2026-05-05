@@ -14,6 +14,7 @@ from typing import Any, Dict
 
 logger = structlog.get_logger(__name__)
 
+from app.infrastructure.neo4j_adapter import Neo4jAdapter
 from app.infrastructure.llm import get_llm
 
 from app.domain.analysis.entities import AnalysisState
@@ -44,7 +45,7 @@ Golden Examples:
 {golden_examples}
 
 Conversational Memory:
-{running_summary}
+{historical_context}
 {chat_history}
 
 Procedural Skill:
@@ -197,6 +198,10 @@ async def analysis_agent(state: AnalysisState) -> Dict[str, Any]:
     if history_arr:
         chat_history = "\n".join([f"[{msg['role'].upper()}]: {msg['content']}" for msg in history_arr])
 
+    # Fetch historical context
+    db = Neo4jAdapter()
+    historical_context = await db.get_agent_memory(state.get("user_id", "default_user"), state.get("source_id", ""))
+
     # Base messages
     messages = [
         SystemMessage(content=REACT_SYSTEM_PROMPT.format(
@@ -204,7 +209,7 @@ async def analysis_agent(state: AnalysisState) -> Dict[str, Any]:
             kb_context=kb_context or "None",
             golden_examples=golden_str,
             complexity_instruction=complexity_instruction,
-            running_summary=state.get("running_summary", "No previous context."),
+            historical_context=historical_context,
             chat_history=chat_history,
             procedural_skill=procedural_memory.get_procedural_knowledge(state.get("intent", "trend")),
             error_hint=error_hint

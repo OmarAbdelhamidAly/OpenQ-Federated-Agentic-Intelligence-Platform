@@ -48,30 +48,28 @@ A user connects a data source, types a natural-language question, and the system
 | **Corporate Hub** | `corporate` | Org Graph | **Strategic Intelligence**: Hierarchy, Goals, and Policy Governance. |
 | **Multi-pillar** | `worker-nexus` | Federated Graph | Strategic Orchestrator of the GraphRAG Pillar Federation. |
 
-
----
-
-### What Makes It Different
-
 | Feature | Description |
 |---|---|
 | 🔀 **Vector Semantic Routing** | SQL/DB schema discovery bypassing regex: `FastEmbed` and Cosine Similarity route queries to exact schemas via `worker-sql`. |
-| 🧬 **Multi-Query RAG-Fusion** | The `worker-nexus` orchestrator breaks down complex questions into sub-queries and uses a **Cross-Encoder Re-Ranker** to filter noise. |
-| 🛡️ **Native RAG Quality Evaluator** | Completely free, local, self-evaluating metrics. Zero-cost dual small language models (`ms-marco` + NLI) measure *Avg Relevance*, *Utilization*, and *Attribution* natively exposed to **Prometheus/Grafana** dashboards. |
+| 🧬 **Multi-Query RAG-Fusion** | يقوم الـ Nexus Orchestrator بتكسير الأسئلة المعقدة لأسئلة فرعية مع استخدام **Cross-Encoder Re-Ranker** لتصفية الضوضاء. |
+| 🛡️ **Native RAG Quality Evaluator** | نظام تقييم محلي بالكامل (Zero-Cost). يستخدم `cross-encoder/ms-marco-MiniLM-L-6-v2` لحساب الـ **Relevance** و `cross-encoder/nli-deberta-v3-small` لحساب الـ **Attribution** (Hallucination detection)، ويقوم بقياس الـ **Utilization** لكل Chunk. النتائج تُصدّر مباشرة لـ Prometheus/Grafana. |
 | 🚀 **WebSockets & gRPC** | Real-time streaming of LLM `thinking_steps` via Redis Pub/Sub WebSockets (Zero REST Polling). |
 | 🔁 **Zero-Row Reflection** | SQL queries returning 0 rows trigger automatic case-mismatch detection against `low_cardinality_values` and self-correcting retry (max 3 iterations, no cold restart) |
-| 👁️ **Human-in-the-Loop (HITL)** | SQL queries against live databases pause at `interrupt_after=["human_approval"]`. Full LangGraph state serialized to Redis via `AsyncRedisSaver` — survives worker restarts, pod evictions, cluster reboots |
+| 👁️ **Human-in-the-Loop (HITL)** | يتم إيقاف عمليات الـ SQL الحساسة عند `interrupt_after=["human_approval"]`. يتم حفظ حالة الـ LangGraph بالكامل في Redis عبر `AsyncRedisSaver` لضمان استمرارية العملية حتى بعد إعادة تشغيل الـ Containers. |
 | 🧬 **Hybrid Retrieval Matrix** | SQL results enriched with PDF/Audio context via parallel Vector (Qdrant) and Graph (Neo4j) search. Uses Text-to-Cypher to traverse relationships that cross-pillar reasoning flows require. |
-| 🧬 **Strategic GraphRAG** | Transitioned all unstructured pillars (Audio, Code, PDF) to a native **Neo4j GDS** backend. Uses Louvain communities and PageRank centrality to discover semantic hierarchies and architectural "Logical Hearts" autonomously. |
+| 🧬 **Strategic GraphRAG & Hybrid Memory** | انتقال كامل للذاكرة المستديمة والـ Unstructured Pillars إلى **Neo4j GDS**. يتم استخدام **FastRP** لتوليد structural embeddings و **Link Prediction** لاكتشاف العلاقات المخفية (Inferred Links) بين الأكواد والملفات والبيانات تلقائياً. |
+| 🧬 **Event-Driven FastRP** | يتم تحديث الهيكل المعرفي (Structural Embeddings) للرسم البياني ديناميكياً في الخلفية باستخدام FastRP بعد إتمام عمليات الـ Ingestion (عوضاً عن حسابها في الـ Query Time)، لضمان استقرار الأداء وسرعة الاستجابة. |
+| 🧬 **Three-Layer Hybrid Search** | محرك بحث ذكي مدمج بالـ Orchestrator يدمج بين الـ Semantic Vector Search بنسبة 70% والـ FastRP Structural Search بنسبة 30% لتعزيز دقة ربط الكيانات العابرة للنطاقات (Cross-Domain Linking). |
 | 🧬 **Semantic Weaver** | Post-indexing background process that "weaves" the knowledge graph by identifying k-NN similarities, clustering thematic communities, and generating hierarchical summaries for global document reasoning. |
-
 | 🛡️ **3-Layer SQL Guardrails** | Layer 1: SELECT-only allowlist · Layer 2: DML/DDL regex blocklist · Layer 3: LLM semantic policy enforcement (tenant-scoped, natural-language rules) |
 | 🏢 **Multi-Tenant Isolation** | Single DB, `tenant_id` scoped on every SQLAlchemy query. Enforced at the `get_current_user` dependency level — cannot be bypassed |
 | ⚡ **Auto-Analysis on Upload** | 5 pre-generated analyses computed in background on upload — users see instant insights on first open, zero wait |
 | 🧠 **Insight Memory** | Successful SQL queries saved as golden examples. Semantically retrieved as few-shot examples in future `analysis_generator` calls — improving accuracy over time |
-| 🏗️ **Clean Architecture** | Every microservice follows Hexagonal Architecture: `domain → use_cases → modules → infrastructure`. Swapping LLM providers or databases requires changes only in the outermost ring |
+| 🏗️ **Clean Architecture** | نلتزم بالـ Hexagonal Architecture في كل Microservice: `domain → use_cases → modules → infrastructure`. تغيير مزود الـ LLM أو قاعدة البيانات يتم فقط في طبقة الـ Infrastructure دون لمس منطق العمل. |
 | 📊 **Reasoning Transparency** | Every LangGraph node output captured in `thinking_steps` JSON and surfaced in the UI — full agent cognition audit trail per job |
 | 🔄 **Multi-Provider LLM Resilience** | `OpenRouter (Gemini 2.0 Flash-001) → Groq (Llama-3.3-70B) → Gemini Direct` fallback chain. LLM provider outages are transparent to all agents |
+| 🎙️ **Voice Queries** | Natural-language questions submitted as audio — transcribed server-side and routed through the standard analysis pipeline |
+nRouter (Gemini 2.0 Flash-001) → Groq (Llama-3.3-70B) → Gemini Direct` fallback chain. LLM provider outages are transparent to all agents |
 | 🎙️ **Voice Queries** | Natural-language questions submitted as audio — transcribed server-side and routed through the standard analysis pipeline |
 | 🎙️ **Voice Queries** | Natural-language questions submitted as audio — transcribed server-side and routed through the standard analysis pipeline |
 
@@ -292,22 +290,17 @@ START → [intake_agent] → check_intake → [guardrail_agent] → route_to_pil
 
 ---
 
-### Layer 3 — Execution Pillars (8 specialized workers)
+### Layer 3 — Execution Pillars (Specialized Workers)
 
-Each is an independently scalable Docker container with its own `requirements.txt`:
+كل خادم هو عبارة عن مستقل (Independently Scalable) وله منطق برمجي مخصص:
 
-| Worker | Queue | Pipeline | Key Capabilities |
-|---|---|---|---|
-| [worker-sql](services/worker-sql/README.md) | `pillar.sql / .sqlite / .postgresql` | **12-node Cyclic StateGraph** | HITL approval, zero-row reflection, hybrid fusion, semantic cache, insight memory |
-| [worker-csv](services/worker-csv/README.md) | `pillar.csv` | **11-node Cyclic StateGraph** | Conditional data cleaning, guardrail, self-healing reflection, verifier |
-| [worker-json](services/worker-json/README.md) | `pillar.json` | **10-node Directed Cyclic StateGraph** | MongoDB aggregation + Qdrant 768d RAG, semantic decomposition |
-| [worker-pdf](services/worker-pdf/README.md) | `pillar.pdf` | **10-node Orchestrator StateGraph** | Gemini 2.0 Flash Vision, triple synthesis engines, anti-hallucination loop |
-| [worker-code](services/worker-code/README.md) | `pillar.code` | **8-node Cyclic StateGraph** | Neo4j AST-mapped codebase, Cypher generation, episodic memory |
-| [worker-audio](services/worker-audio/README.md) | `pillar.audio` | Direct task (Gemini 1.5 Flash) | Transcript, speaker diarization, entity extraction, Neo4j sync |
-| [worker-vision](services/worker-vision/README.md) | `pillar.vision` | **Vision Engine** | YOLOv11 detection + FaceNet recognition, 10s sampling, focus analytics |
-| [worker-image](services/worker-image/README.md) | `pillar.image` | Direct task (Gemini multimodal) | Object/scene recognition, entity extraction, Neo4j sync |
-| [worker-video](services/worker-video/README.md) | `pillar.video` | Direct task (Gemini multimodal) | Scene analysis, entity extraction, Neo4j sync |
-| [worker-nexus](services/worker-nexus/README.md) | `pillar.nexus` | **6-node Federated Orchestrator** | Cross-pillar Neo4j forge → context gather → 5-pillar strategic synthesis |
+| Worker | Primary Logic File | Key Capabilities |
+|---|---|---|
+| **[worker-sql](services/worker-sql/README.md)** | `modules/sql/workflow.py` | **12-node Graph**: Schema extraction, NL-to-SQL (DeepSeek V3), Zero-row reflection, HITL approval. |
+| **[worker-pdf](services/worker-pdf/README.md)** | `modules/pdf/workflow.py` | **Multi-strategy Indexing**: Fast/Auto/OCR. Uses `multilingual-e5-large` for 1024d local embeddings. |
+| **[worker-code](services/worker-code/README.md)** | `infrastructure/ast_parser.py` | **AST Graphing**: يستخدم `tree-sitter` لـ 10 لغات. يبني Call Graph و Dependency Graph في Neo4j. |
+| **[worker-audio](services/worker-audio/README.md)** | `modules/audio/workflow.py` | **Multimodal Vision**: يستخدم Gemini 2.5 Flash للتحليل الصوتي المباشر (Transcription + Diarization). |
+| **[worker-nexus](services/worker-nexus/README.md)** | `modules/indexing/` | **The Brain**: يربط مخرجات كل الـ Workers في Federated Knowledge Graph واحد. |
 
 ---
 
@@ -438,18 +431,28 @@ START → [discovery] → [generator] →
 
 ### Nexus Pipeline — 6 Nodes (Federated Orchestrator)
 
-Triggers cross-domain intelligence across all pillars simultaneously. Backed by Neo4j knowledge graph.
+هذا هو العقل المدبر الذي يربط كل الـ Pillars ببعضها البعض في Neo4j.
 
 ```
-START → [router] →
-    ├── explore        → [explorer] → [orchestrator]
-    ├── direct_query   →              [orchestrator]
-    └── finalize       →                             → [synthesizer]
-                                                            ▼
-                                                        [memory] → [save_cache] → END
+START → [query_fusion] → [gather_context] → [rerank_context] → [synthesis_layer] → [memory] → END
 ```
 
-The `pillar_orchestrator` forges cross-pillar relationships in Neo4j (Code↔SQL, Entity↔Target, Chunk↔Mention), gathers multi-source context, and passes a structured 5-pillar context block to `synthesis_engine` for LLM-driven strategic report generation.
+1. **Query Fusion**: يكسر السؤال لـ 3 محاور (Structural, Schema, Business).
+2. **Gather Context**: استدعاء متوازي (Parallel I/O) لبيانات Neo4j و Postgres.
+3. **Rerank Context**: يستخدم **ToolsRetriever** للاختيار بين Vector Search أو Cypher Query بناءً على طبيعة السؤال.
+4. **Synthesis Layer**: يقوم بعمل Strategic Report يربط بين (الكود، قواعد البيانات، ملفات الـ PDF، والتقارير الصوتية) في سياق واحد.
+5. **Memory**: يستخدم `Neo4jMessageHistory` لضمان ذاكرة مستديمة عبر الجلسات.
+
+---
+
+## 🧠 Deep Architectural Rationale
+
+| القرار المعماري | السبب التقني |
+|---|---|
+| **Neo4j + Qdrant Hybrid** | Qdrant للبحث المتجهي السريع، و Neo4j لفهم العلاقات (Traversal). الـ `QdrantNeo4jRetriever` يجمع بينهما لجلب الـ Node بالكامل بـ ID موحد. |
+| **Federated Sinks** | فصل معالجة كل نوع بيانات (PDF vs SQL vs Code) لضمان قابلية التوسع. لو فشل معالج الـ SQL، يستمر معالج الـ PDF في العمل. |
+| **GDS Maintenance** | تشغيل عمليات **Entity Resolution** و **Link Prediction** في الخلفية لدمج الكيانات المتشابهة (مثل "AWS" و "Amazon") تلقائياً. |
+| **CodeStore (Filesystem)** | تخزين الأكواد الخام على القرص وليس داخل Neo4j لضمان سرعة الاستعلامات، مع الاحتفاظ بـ Meta-Graph فقط داخل قاعدة البيانات. |
 
 ---
 

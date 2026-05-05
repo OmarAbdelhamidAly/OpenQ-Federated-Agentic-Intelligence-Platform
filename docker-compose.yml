@@ -2,6 +2,16 @@
 #  Autonomous Data Analyst Agent — 4-Pillar Microservices Stack
 # ══════════════════════════════════════════════════════════════
 
+x-shared-env: &shared-env
+  DATABASE_URL: postgresql+asyncpg://postgres:postgres@postgres:5432/analyst_agent
+  REDIS_URL: redis://redis:6379/0
+  OLLAMA_BASE_URL: http://ollama:11434
+
+x-neo4j-env: &neo4j-env
+  NEO4J_URI: bolt://neo4j:7687
+  NEO4J_USERNAME: neo4j
+  NEO4J_PASSWORD: analyst_neo4j_password
+
 services:
   # ── PostgreSQL (Metadata) ───────────────────────────────────
   postgres:
@@ -91,13 +101,18 @@ services:
     ports: ["8002:8000"]
     env_file: [.env]
     environment:
-      DATABASE_URL: postgresql+asyncpg://postgres:postgres@postgres:5432/analyst_agent
-      REDIS_URL: redis://redis:6379/0
-      OLLAMA_BASE_URL: http://ollama:11434
+      <<: *shared-env
 
     volumes:
       - tenant_uploads:/tmp/tenants
       - ./services/api:/app
+    develop:
+      watch:
+        - action: sync
+          path: ./services/api
+          target: /app
+        - action: rebuild
+          path: ./services/api/requirements.txt
     networks: [frontend-net, backend-net]
     command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1"]
     deploy:
@@ -116,12 +131,17 @@ services:
     restart: unless-stopped
     env_file: [.env]
     environment:
-      DATABASE_URL: postgresql+asyncpg://postgres:postgres@postgres:5432/analyst_agent
-      REDIS_URL: redis://redis:6379/0
-      OLLAMA_BASE_URL: http://ollama:11434
+      <<: *shared-env
     volumes:
       - tenant_uploads:/tmp/tenants
       - ./services/governance:/app
+    develop:
+      watch:
+        - action: sync
+          path: ./services/governance
+          target: /app
+        - action: rebuild
+          path: ./services/governance/requirements.txt
     networks: [backend-net]
     command: ["celery", "-A", "app.worker", "worker", "-Q", "governance,celery", "--loglevel=info", "--concurrency=2"]
     deploy:
@@ -138,14 +158,19 @@ services:
     restart: unless-stopped
     env_file: [.env]
     environment:
-      DATABASE_URL: postgresql+asyncpg://postgres:postgres@postgres:5432/analyst_agent
-      REDIS_URL: redis://redis:6379/0
-      OLLAMA_BASE_URL: http://ollama:11434
+      <<: *shared-env
       SQLITE_BASE_DIR: /tmp/tenants
 
     volumes:
       - tenant_uploads:/tmp/tenants
       - ./services/worker-sql:/app
+    develop:
+      watch:
+        - action: sync
+          path: ./services/worker-sql
+          target: /app
+        - action: rebuild
+          path: ./services/worker-sql/requirements.txt
     networks: [backend-net]
     command: ["celery", "-A", "app.worker", "worker", "-Q", "pillar.sql,pillar.sqlite,pillar.postgresql", "--loglevel=info", "--concurrency=4"]
     deploy:
@@ -163,14 +188,19 @@ services:
     restart: unless-stopped
     env_file: [.env]
     environment:
-      DATABASE_URL: postgresql+asyncpg://postgres:postgres@postgres:5432/analyst_agent
-      REDIS_URL: redis://redis:6379/0
-      OLLAMA_BASE_URL: http://ollama:11434
+      <<: *shared-env
       MONGO_URI: mongodb://mongodb:27017
 
     volumes:
       - tenant_uploads:/tmp/tenants
       - ./services/worker-json:/app
+    develop:
+      watch:
+        - action: sync
+          path: ./services/worker-json
+          target: /app
+        - action: rebuild
+          path: ./services/worker-json/requirements.txt
     networks: [backend-net]
     command: ["celery", "-A", "app.worker", "worker", "-Q", "pillar.json", "--loglevel=info", "--concurrency=4"]
     deploy:
@@ -186,16 +216,18 @@ services:
     restart: unless-stopped
     env_file: [.env]
     environment:
-      DATABASE_URL: postgresql+asyncpg://postgres:postgres@postgres:5432/analyst_agent
-      REDIS_URL: redis://redis:6379/0
-      OLLAMA_BASE_URL: http://ollama:11434
-      NEO4J_URI: bolt://neo4j:7687
-      NEO4J_USERNAME: neo4j
-      NEO4J_PASSWORD: analyst_neo4j_password
+      <<: [*shared-env, *neo4j-env]
     volumes:
       - tenant_uploads:/tmp/tenants
       - codebase_chunks_volume:/data/code_chunks
       - ./services/worker-code:/app
+    develop:
+      watch:
+        - action: sync
+          path: ./services/worker-code
+          target: /app
+        - action: rebuild
+          path: ./services/worker-code/requirements.txt
     networks: [backend-net]
     command: ["celery", "-A", "app.worker", "worker", "-Q", "pillar.code", "--loglevel=info", "--concurrency=2"]
     deploy:
@@ -222,15 +254,20 @@ services:
     restart: unless-stopped
     env_file: [.env]
     environment:
-      DATABASE_URL: postgresql+asyncpg://postgres:postgres@postgres:5432/analyst_agent
-      REDIS_URL: redis://redis:6379/0
-      OLLAMA_BASE_URL: http://ollama:11434
+      <<: *shared-env
       HF_HOME: /app/hf_cache
       WORKER_TYPE: indexing
     volumes:
       - tenant_uploads:/tmp/tenants
       - ./services/worker-pdf:/app
       - hf_cache:/app/hf_cache
+    develop:
+      watch:
+        - action: sync
+          path: ./services/worker-pdf
+          target: /app
+        - action: rebuild
+          path: ./services/worker-pdf/requirements.txt
     networks: [backend-net]
     command: ["celery", "-A", "app.worker", "worker", "-Q", "knowledge", "--loglevel=info", "--concurrency=3"]
     deploy:
@@ -246,15 +283,20 @@ services:
     restart: unless-stopped
     env_file: [.env]
     environment:
-      DATABASE_URL: postgresql+asyncpg://postgres:postgres@postgres:5432/analyst_agent
-      REDIS_URL: redis://redis:6379/0
-      OLLAMA_BASE_URL: http://ollama:11434
+      <<: *shared-env
       HF_HOME: /app/hf_cache
       WORKER_TYPE: analysis
     volumes:
       - tenant_uploads:/tmp/tenants
       - ./services/worker-pdf:/app
       - hf_cache:/app/hf_cache
+    develop:
+      watch:
+        - action: sync
+          path: ./services/worker-pdf
+          target: /app
+        - action: rebuild
+          path: ./services/worker-pdf/requirements.txt
     networks: [backend-net]
     command: ["celery", "-A", "app.worker", "worker", "-Q", "pillar.pdf", "--loglevel=info", "--concurrency=3"]
     deploy:
@@ -271,15 +313,18 @@ services:
     restart: unless-stopped
     env_file: [.env]
     environment:
-      DATABASE_URL: postgresql+asyncpg://postgres:postgres@postgres:5432/analyst_agent
-      REDIS_URL: redis://redis:6379/0
-      NEO4J_URI: bolt://neo4j:7687
-      NEO4J_USERNAME: neo4j
-      NEO4J_PASSWORD: analyst_neo4j_password
+      <<: [*shared-env, *neo4j-env]
       QDRANT_URL: http://qdrant:6333
     volumes:
       - tenant_uploads:/tmp/tenants
       - ./services/worker-audio:/app
+    develop:
+      watch:
+        - action: sync
+          path: ./services/worker-audio
+          target: /app
+        - action: rebuild
+          path: ./services/worker-audio/requirements.txt
     networks: [backend-net]
     command: ["celery", "-A", "app.worker:celery_app", "worker",
               "-Q", "pillar.audio",
@@ -302,15 +347,17 @@ services:
     restart: unless-stopped
     env_file: [.env]
     environment:
-      DATABASE_URL: postgresql+asyncpg://postgres:postgres@postgres:5432/analyst_agent
-      REDIS_URL: redis://redis:6379/0
-      OLLAMA_BASE_URL: http://ollama:11434
-      NEO4J_URI: bolt://neo4j:7687
-      NEO4J_USERNAME: neo4j
-      NEO4J_PASSWORD: analyst_neo4j_password
+      <<: [*shared-env, *neo4j-env]
     volumes:
       - tenant_uploads:/tmp/tenants
       - ./services/worker-nexus:/app
+    develop:
+      watch:
+        - action: sync
+          path: ./services/worker-nexus
+          target: /app
+        - action: rebuild
+          path: ./services/worker-nexus/requirements.txt
     networks: [backend-net]
     command: ["celery", "-A", "app.worker", "worker", "-Q", "pillar.nexus", "--loglevel=info", "--concurrency=2"]
     deploy:

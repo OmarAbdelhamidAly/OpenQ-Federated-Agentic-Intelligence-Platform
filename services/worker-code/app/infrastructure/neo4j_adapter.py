@@ -334,8 +334,15 @@ class Neo4jAdapter:
                 """
                 MATCH (t:Table {source_id: $source_id})
                 WHERE t.embedding IS NOT NULL
-                CALL db.index.vector.queryNodes("codebaseSemanticIndex", 3, t.embedding) YIELD node AS c, score
-                WHERE score > 0.85 AND c:Class AND c.source_id = $source_id
+                CALL db.index.vector.queryNodes("codebaseSemanticIndex", 10, t.embedding) YIELD node AS c, score AS semantic_score
+                WHERE c:Class AND c.source_id = $source_id
+                WITH t, c, semantic_score, 
+                     CASE WHEN t.fastrp_embedding IS NOT NULL AND c.fastrp_embedding IS NOT NULL 
+                          THEN gds.similarity.cosine(t.fastrp_embedding, c.fastrp_embedding) 
+                          ELSE 0 END AS structural_score
+                WITH t, c, semantic_score, structural_score, (semantic_score * 0.7) + (structural_score * 0.3) AS hybrid_score
+                WHERE hybrid_score > 0.80
+                WITH t, c, hybrid_score ORDER BY hybrid_score DESC LIMIT 3
                 MERGE (c)-[:REPRESENTS_DATA]->(t)
                 """,
                 source_id=source_id
@@ -418,3 +425,70 @@ class Neo4jAdapter:
                 "nodes": nodes_result,
                 "links": links_result
             }
+
+    async def get_agent_memory(self, user_id: str, source_id: str, limit: int = 5) -> str:
+        """Retrieve recent MemoryFacts from Neo4j for the given user and source."""
+        async with self.driver.session() as session:
+            query = """
+            MATCH (u:User {id: $user_id})<-[:OWNED_BY]-(s:Session {source_id: $source_id})-[:PRODUCED_MEMORY]->(m:MemoryFact)
+            OPTIONAL MATCH (m)-[:MENTIONS]->(e:Entity)
+            RETURN m.text AS fact, collect(e.name) AS entities, m.timestamp AS ts
+            ORDER BY m.timestamp DESC
+            LIMIT $limit
+            """
+            records = await session.run(query, user_id=user_id, source_id=source_id, limit=limit)
+            facts = []
+            async for rec in records:
+                fact_text = rec["fact"]
+                entities = rec["entities"]
+                if entities:
+                    fact_text += f" (Entities: {', '.join(entities)})"
+                facts.append(fact_text)
+            
+            if not facts:
+                return "No previous long-term memory."
+            
+            return "\\n".join(f"- {f}" for f in reversed(facts))
+
+
+    async def generate_structural_embeddings(self, source_id: str) -> None:
+        """Projects the graph to GDS, runs FastRP, and persists the structural embeddings."""
+        graph_name = f"nexusGraph_{source_id.replace('-', '_')}"
+        async with self.driver.session() as session:
+            try:
+                # 1. Drop graph if exists (cleanup from previous runs)
+                await session.run("CALL gds.graph.drop($graph_name, false)", graph_name=graph_name)
+                
+                # 2. Project the graph
+                # Using * for relationships to capture all structural connectivity
+                await session.run("""
+                CALL gds.graph.project(
+                    $graph_name,
+                    ['Class', 'Function', 'Table', 'File', 'Directory', 'MemoryFact', 'Entity', 'Document', 'Chunk', 'Column'],
+                    '*'
+                )
+                """, graph_name=graph_name)
+                
+                # 3. Run FastRP and write back
+                await session.run("""
+                CALL gds.fastRP.write(
+                    $graph_name,
+                    {
+                        embeddingDimension: 256,
+                        writeProperty: 'fastrp_embedding',
+                        randomSeed: 42
+                    }
+                )
+                """, graph_name=graph_name)
+                
+                # 4. Drop the in-memory graph
+                await session.run("CALL gds.graph.drop($graph_name, false)", graph_name=graph_name)
+                logger.info("neo4j_fastrp_embeddings_generated", source_id=source_id)
+            except Exception as e:
+                logger.warning("neo4j_fastrp_failed_make_sure_gds_is_installed", error=str(e), source_id=source_id)
+                # Cleanup on failure just in case
+                try:
+                    await session.run("CALL gds.graph.drop($graph_name, false)", graph_name=graph_name)
+                except:
+                    pass
+

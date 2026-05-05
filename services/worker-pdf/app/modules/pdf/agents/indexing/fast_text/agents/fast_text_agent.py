@@ -1,10 +1,10 @@
+from __future__ import annotations
 from app.infrastructure.config import settings
 """Fast Text Synthesis Agent — Master Orchestrator Node.
 
 This node performs final answer synthesis for text-heavy queries using 
 previously retrieved chunks from the vector database.
 """
-from __future__ import annotations
 
 import structlog
 from typing import Any, Dict

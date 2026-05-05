@@ -9,7 +9,9 @@ RUN echo 'Acquire::http::Pipeline-Depth "0";' > /etc/apt/apt.conf.d/99fixbadprox
     sed -i 's|http://deb.debian.org|https://deb.debian.org|g' /etc/apt/sources.list 2>/dev/null || true
 
 # Install system dependencies for OpenCV and AI libraries
-RUN apt-get update && apt-get install -y \
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    apt-get update && apt-get install -y \
     libgl1 \
     libglib2.0-0 \
     libgomp1 \
@@ -18,8 +20,9 @@ RUN apt-get update && apt-get install -y \
 COPY requirements.txt .
 
 # Optimize pip installation
-RUN pip install --no-cache-dir --upgrade pip && \
-    pip install --no-cache-dir --default-timeout=1000 --retries 10 -r requirements.txt
+RUN --mount=type=cache,target=/root/.cache/pip \
+    pip install --upgrade pip && \
+    pip install --default-timeout=1000 --retries 10 -r requirements.txt
 
 COPY . .
 

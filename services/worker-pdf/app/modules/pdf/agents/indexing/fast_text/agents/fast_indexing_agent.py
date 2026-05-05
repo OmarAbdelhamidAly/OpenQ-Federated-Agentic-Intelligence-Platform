@@ -170,6 +170,13 @@ async def fast_indexing_agent(source_id: str) -> Dict[str, Any]:
             )
             logger.info("neo4j_sync_done", source_id=source_id,
                         chunks=len(neo4j_chunks))
+                        
+            # ── Trigger FastRP Structural Embeddings ──────────────────
+            try:
+                logger.info("triggering_fastrp_structural_embeddings", source_id=source_id)
+                await neo4j.generate_structural_embeddings(source_id)
+            except Exception as gds_err:
+                logger.warning("fastrp_generation_failed_ignoring", source_id=source_id, error=str(gds_err))
         except Exception as neo_err:
             logger.warning("neo4j_sync_failed_secondary", error=str(neo_err))
 

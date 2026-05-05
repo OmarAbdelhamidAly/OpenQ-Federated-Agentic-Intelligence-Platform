@@ -232,7 +232,7 @@ async def _fetch_all_records(collection_name: str, limit: int = 10000) -> List[D
     return docs
 
 def _handle_meta_question(question: str, schema: Dict[str, Any]) -> dict | None:
-    \"\"\"Answer questions ABOUT the dataset structure directly — no LLM needed.\"\"\"
+    """Answer questions ABOUT the dataset structure directly — no LLM needed."""
     q = question.lower().strip()
     columns_info = schema.get("columns", [])
     all_cols = [c["name"] for c in columns_info]

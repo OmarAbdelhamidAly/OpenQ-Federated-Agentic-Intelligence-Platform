@@ -28,7 +28,6 @@ class CodeAnalysisState(TypedDict):
 
     # ── Memory (Sliding Window & Summary) ─────────────────────────────
     chat_history:    Optional[List[Dict[str, str]]]
-    running_summary: Optional[str]
 
     # ── Output ────────────────────────────────────────────────────────
     insight_report:    Optional[str]

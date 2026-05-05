@@ -183,6 +183,13 @@ async def run_codebase_ingestion(source_id: str) -> None:
         except Exception as e:
             logger.error("code_semantic_weaver_failed_but_ignoring", source_id=source_id, error=str(e))
 
+        # ── 9. Generate FastRP Structural Embeddings ───────────────
+        try:
+            logger.info("triggering_fastrp_structural_embeddings", source_id=source_id)
+            await adapter.generate_structural_embeddings(source_id)
+        except Exception as e:
+            logger.error("fastrp_generation_failed_ignoring", source_id=source_id, error=str(e))
+
         logger.info("strategic_ingestion_complete", source_id=source_id)
 
     except Exception as exc:

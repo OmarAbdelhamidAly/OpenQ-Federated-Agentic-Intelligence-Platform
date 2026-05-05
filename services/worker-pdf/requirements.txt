@@ -96,3 +96,4 @@ python-magic>=0.4.27; sys_platform != 'win32'
 # Local Galileo-equivalent metrics (Chunk Relevance, Attribution, Utilization)
 sentence-transformers>=3.0.0
 torch>=2.2.0
+

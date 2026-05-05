@@ -2,6 +2,7 @@ from app.infrastructure.config import settings
 import structlog
 from typing import Dict, Any, List
 from pydantic import BaseModel, Field
+from app.infrastructure.neo4j_adapter import Neo4jAdapter
 from app.infrastructure.llm import get_llm
 from langchain_core.messages import HumanMessage
 from app.domain.analysis.entities import AnalysisState
@@ -32,8 +33,14 @@ async def analyst_agent(state: AnalysisState) -> Dict[str, Any]:
     llm = get_llm(temperature=0, model=settings.LLM_MODEL_PDF)
     structured_llm = llm.with_structured_output(AnalystOutput)
     
+    db = Neo4jAdapter()
+    historical_context = await db.get_agent_memory(state.get("user_id", "default_user"), state.get("source_id", ""))
+    
+    prompt = """You are an elite Business Data Analyst. 
+    Review the provided AI document analysis and extract high-level strategic recommendations.
+
     Previous Context:
-    {running_summary}
+    {historical_context}
 
     Past Experience (Similar Documents/Queries):
     {episodic_context}
@@ -55,7 +62,7 @@ async def analyst_agent(state: AnalysisState) -> Dict[str, Any]:
     try:
         res = await structured_llm.ainvoke([HumanMessage(content=prompt.format(
             report=report,
-            running_summary=state.get("running_summary", "No previous context."),
+            historical_context=historical_context,
             episodic_context=episodic_context,
             procedural_skill=procedural_memory.get_procedural_knowledge(state.get("analysis_mode", "deep_vision"))
         ))])

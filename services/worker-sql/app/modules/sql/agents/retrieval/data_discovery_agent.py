@@ -99,11 +99,20 @@ async def data_discovery_agent(state: AnalysisState) -> Dict[str, Any]:
             neo4j = Neo4jAdapter()
             source_id = state.get("source_id")
             if source_id:
-                neo4j.batch_upsert_data_schema(
+                # Use strategic schema sync
+                await neo4j.batch_upsert_strategic_schema(
                     source_id=source_id,
                     tables=schema_summary.get("tables", [])
                 )
                 _log.info("neo4j_sql_schema_sync_done", source_id=source_id, tables=len(schema_summary.get("tables", [])))
+                
+                # ── Trigger FastRP Structural Embeddings ──────────────────
+                try:
+                    _log.info("triggering_fastrp_structural_embeddings", source_id=source_id)
+                    await neo4j.generate_structural_embeddings(source_id)
+                except Exception as gds_err:
+                    _log.warning("fastrp_generation_failed_ignoring", source_id=source_id, error=str(gds_err))
+
         except Exception as neo_err:
             _log.warning("neo4j_sql_sync_failed_secondary", error=str(neo_err))
 

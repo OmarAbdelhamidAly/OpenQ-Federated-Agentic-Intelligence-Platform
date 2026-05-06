@@ -1,0 +1,39 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: worker-vision
+  namespace: openq-workers
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: worker-vision
+  template:
+    metadata:
+      labels:
+        app: worker-vision
+    spec:
+      containers:
+      - name: worker-vision
+        image: omarabdelhamidaly/openq-worker-vision:latest
+        # No command specified, relying on Dockerfile ENTRYPOINT/CMD
+        envFrom:
+        - configMapRef:
+            name: openq-config
+        - secretRef:
+            name: openq-secrets
+        resources:
+          limits:
+            cpu: "2000m"
+            memory: "4Gi"
+          requests:
+            cpu: "500m"
+            memory: "1Gi"
+        # Vision worker might not be a celery worker, so standard HTTP health check or process check
+        # Since it's a loop, we can just check if the process is running, or skip if no clear endpoint
+        volumeMounts:
+        - name: tenant-data
+          mountPath: /tmp/tenants
+      volumes:
+      - name: tenant-data
+        emptyDir: {} # TODO: Replace with EFS PVC for production
